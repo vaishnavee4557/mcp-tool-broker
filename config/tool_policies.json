@@ -1,0 +1,34 @@
+{
+  "defaults": {
+    "factigent": {
+      "domain": "telemetry",
+      "operation": "read",
+      "required_scopes": ["machines:read"],
+      "keywords": ["machine", "sensor", "telemetry", "reading"],
+      "enabled": true
+    }
+  },
+  "tools": {
+    "factigent.get_latest_readings": {
+      "domain": "telemetry",
+      "operation": "read",
+      "required_scopes": ["machines:read"],
+      "keywords": ["latest", "current", "temperature", "vibration", "voltage", "humidity"],
+      "summary": "Get the latest selected sensor readings for one machine"
+    },
+    "factigent.get_anomalies": {
+      "domain": "predictive_maintenance",
+      "operation": "read",
+      "required_scopes": ["anomalies:read"],
+      "keywords": ["anomaly", "abnormal", "fault", "outlier", "predictive maintenance"],
+      "summary": "Get recent anomaly detections for one machine"
+    },
+    "factigent.create_maintenance_ticket": {
+      "domain": "maintenance",
+      "operation": "write",
+      "required_scopes": ["tickets:write"],
+      "keywords": ["ticket", "incident", "maintenance", "create", "service"],
+      "summary": "Create a maintenance ticket for a machine problem"
+    }
+  }
+}
