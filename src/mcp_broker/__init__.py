@@ -28,7 +28,27 @@ MCP server executes the Python tool function
     ↓
 Tool calls Factigent API|
 
-# Mock model: used without an actual LLM API
+# Mock model: used without an actual LLM API 
+User Question
+    ↓
+cli.py
+raw_query = input(...)
+    ↓
+normalize_query(raw_query)
+    ↓
+build_retrieval_query(...)
+    ↓
+retriever.retrieve(...)
+    ↓
+pgvector + BM25
+    ↓
+Top relevant MCP tools
+    ↓
+LLM choose_tool()
+    ↓
+MCP API call
+    ↓
+LLM final answer
 
 #     """
 #     Used for local testing.
@@ -153,4 +173,63 @@ Tool calls Factigent API|
 # $env:PYTHONPATH = (Resolve-Path .\src).Path
 
 # C:\Users\vaish\Downloads\mcp_tool_broker.venv\Scripts\python.exe -m mcp_broker.cli
+"""
 
+
+
+
+
+
+
+
+"""
+# cd C:\Users\vaish\Downloads\mcp_tool_broker
+# .\.venv\Scripts\Activate.ps1
+# $env:PYTHONPATH = (Resolve-Path .\src).Path
+# python -m mcp_broker.mcp_server
+# for cli 
+# cd C:\Users\vaish\Downloads\mcp_tool_broker
+# .\.venv\Scripts\Activate.ps
+# $env:PYTHONPATH = (Resolve-Path .\src).Path
+# python -m mcp_broker.cli
+#  for pg vector db
+# Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+# docker start factigent_pgvector
+# docker ps --filter "name=factigent_pgvector"
+# docker info
+#   Test-NetConnection 127.0.0.1 -Port 5433     
+#cd C:\Users\vaish\Downloads\mcp_tool_broker
+#.\.venv\Scripts\Activate.ps1
+#$env:PYTHONPATH=(Resolve-Path .\src).Path
+#$env:OPENAPI_SOURCE_NAME="ums"
+#$env:MCP_HOST="127.0.0.1"
+#$env:MCP_PORT="8003"
+#python -m mcp_broker.mcp_server     
+    # cd C:\Users\vaish\Downloads\mcp_tool_broker
+# .\.venv\Scripts\Activate.ps1
+# $env:PYTHONPATH=(Resolve-Path .\src).Path
+# $env:OPENAPI_SOURCE_NAME="play"
+# $env:MCP_HOST="127.0.0.1"
+# $env:MCP_PORT="8002"
+# python -m mcp_broker.mcp_server
+    # TO SEE PGVECTORE 
+    
+    # cd C:\Users\vaish\Downloads\mcp_tool_broker
+#docker ps --format "table {{.Names}}\t{{.Status}}"
+    # docker exec -it factigent_pgvector psql -U factigent_app -d factigent_chatbot
+#     SELECT
+#     COUNT(*) AS total_tools,
+#     COUNT(embedding) AS embedded_tools,
+#     COUNT(*) - COUNT(embedding) AS tools_without_embedding
+# FROM mcp_tools;
+# SELECT
+#     id,
+#     server_name,
+#     tool_name,
+#     embedding_model,
+#     left(searchable_text, 180) AS embedded_text,
+#     left(embedding::text, 180) AS embedding_preview
+# FROM public.mcp_tools
+# WHERE embedding IS NOT NULL
+# ORDER BY server_name, tool_name
+# LIMIT 3;

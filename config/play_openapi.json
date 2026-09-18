@@ -1,0 +1,2035 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Factigent Play API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5001"
+    }
+  ],
+  "paths": {
+    "/connection/": {
+      "post": {
+        "operationId": "connection_createconnection",
+        "summary": "CreateConnection",
+        "description": "CreateConnection",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "dataFlowId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "nextHop": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "configType": {
+                        "type": "string"
+                      },
+                      "endpointUrl": {
+                        "type": "string"
+                      },
+                      "username": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      },
+                      "securityType": {
+                        "type": "string"
+                      },
+                      "securityPolicy": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "connection_updateconnection",
+        "summary": "UpdateConnection",
+        "description": "UpdateConnection",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "dataFlowId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "nextHop": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "configType": {
+                        "type": "string"
+                      },
+                      "endpointUrl": {
+                        "type": "string"
+                      },
+                      "username": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      },
+                      "securityType": {
+                        "type": "string"
+                      },
+                      "securityPolicy": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "connection_getconnections",
+        "summary": "GetConnections",
+        "description": "GetConnections",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "connection_deleteconnection",
+        "summary": "DeleteConnection",
+        "description": "DeleteConnection",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "connectionName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/connection/test": {
+      "post": {
+        "operationId": "connection_testconnection",
+        "summary": "TestConnection",
+        "description": "TestConnection",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "dataFlowId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "nextHop": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "configType": {
+                        "type": "string"
+                      },
+                      "endpointUrl": {
+                        "type": "string"
+                      },
+                      "username": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      },
+                      "securityType": {
+                        "type": "string"
+                      },
+                      "securityPolicy": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/connection/test/{connectionName}": {
+      "post": {
+        "operationId": "connection_testconnection_copy",
+        "summary": "TestConnection Copy",
+        "description": "TestConnection Copy",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "connectionName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "dataFlowId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "nextHop": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "configType": {
+                        "type": "string"
+                      },
+                      "endpointUrl": {
+                        "type": "string"
+                      },
+                      "username": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      },
+                      "securityType": {
+                        "type": "string"
+                      },
+                      "securityPolicy": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/connection/kep": {
+      "post": {
+        "operationId": "connection_testconnection_copy_2",
+        "summary": "TestConnection Copy 2",
+        "description": "TestConnection Copy 2",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "dataFlowId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "nextHop": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "configType": {
+                        "type": "string"
+                      },
+                      "endpointUrl": {
+                        "type": "string"
+                      },
+                      "username": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      },
+                      "securityType": {
+                        "type": "string"
+                      },
+                      "securityPolicy": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/connection/status/{connectionName}": {
+      "put": {
+        "operationId": "connection_updateconnectionstatus",
+        "summary": "UpdateConnectionStatus",
+        "description": "UpdateConnectionStatus",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "connectionName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "dataFlowId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "nextHop": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "configType": {
+                        "type": "string"
+                      },
+                      "endpointUrl": {
+                        "type": "string"
+                      },
+                      "username": {
+                        "type": "string"
+                      },
+                      "password": {
+                        "type": "string"
+                      },
+                      "securityType": {
+                        "type": "string"
+                      },
+                      "securityPolicy": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/connection/browse/{connectionName}": {
+      "get": {
+        "operationId": "connection_browseconnection",
+        "summary": "BrowseConnection",
+        "description": "BrowseConnection",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "connectionName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/context": {
+      "post": {
+        "operationId": "context_createcontextmachine",
+        "summary": "CreateContextMachine",
+        "description": "CreateContextMachine",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "company": {
+                    "type": "string"
+                  },
+                  "site": {
+                    "type": "string"
+                  },
+                  "zone": {
+                    "type": "string"
+                  },
+                  "line": {
+                    "type": "string"
+                  },
+                  "cell": {
+                    "type": "string"
+                  },
+                  "contextType": {
+                    "type": "string"
+                  },
+                  "machineId": {
+                    "type": "string"
+                  },
+                  "machineName": {
+                    "type": "string"
+                  },
+                  "machineType": {
+                    "type": "string"
+                  },
+                  "sourceName": {
+                    "type": "string"
+                  },
+                  "sourceType": {
+                    "type": "string"
+                  },
+                  "sourceId": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/context/machine": {
+      "get": {
+        "operationId": "context_getmachinecontext",
+        "summary": "GetMachineContext",
+        "description": "GetMachineContext",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "zone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "line",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "cell",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "machineName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "machineId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "sourceType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "sourceName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "sourceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/context/execution": {
+      "get": {
+        "operationId": "context_getexecutioncontext",
+        "summary": "GetExecutionContext",
+        "description": "GetExecutionContext",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "zone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "line",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "cell",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "executionType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "sourceName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/context/filter": {
+      "get": {
+        "operationId": "context_getcontextfiltered",
+        "summary": "GetContextFiltered",
+        "description": "GetContextFiltered",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "contextType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "zone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "line",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "cell",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "machineName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "machineId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "sourceType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "sourceName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "sourceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "executionType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/api/mappings/tag/opc": {
+      "post": {
+        "operationId": "tags_createtag_opc",
+        "summary": "CreateTag-OPC",
+        "description": "CreateTag-OPC",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "contextId": {
+                    "type": "string"
+                  },
+                  "connectionName": {
+                    "type": "string"
+                  },
+                  "connectionId": {
+                    "type": "string"
+                  },
+                  "contextType": {
+                    "type": "string"
+                  },
+                  "unsPath": {
+                    "type": "string"
+                  },
+                  "tagName": {
+                    "type": "string"
+                  },
+                  "tagAlias": {
+                    "type": "string"
+                  },
+                  "tagType": {
+                    "type": "string"
+                  },
+                  "opcTagId": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "valueFunction": {
+                    "type": "object",
+                    "properties": {
+                      "dataType": {
+                        "type": "string"
+                      },
+                      "aggregationFunction": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "additionalData": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mappings/tags": {
+      "get": {
+        "operationId": "tags_gettags",
+        "summary": "GetTags",
+        "description": "GetTags",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "connectionName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter"
+          },
+          {
+            "name": "contextId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/api/mappings/params": {
+      "get": {
+        "operationId": "tags_getparams",
+        "summary": "GetParams",
+        "description": "GetParams",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "contextId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional query parameter (disabled in Postman example)"
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/dataflow": {
+      "post": {
+        "operationId": "dataflow_createdataflow",
+        "summary": "CreateDataFlow",
+        "description": "CreateDataFlow",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "connectionName": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tagId": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  },
+                  "transformer": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "object",
+                        "properties": {
+                          "source": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "samplingIntervalMs": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "mapper": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "object",
+                        "properties": {
+                          "source": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "paramName": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "rules": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "sourceField": {
+                              "type": "string"
+                            },
+                            "targetField": {
+                              "type": "string"
+                            },
+                            "expression": {
+                              "type": "string"
+                            },
+                            "typeCast": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "publisher": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "type": "string"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "format": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "dataflow_updatedataflow",
+        "summary": "UpdateDataFlow",
+        "description": "UpdateDataFlow",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "connectionName": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "tagCount": {
+                    "type": "integer"
+                  },
+                  "transformer": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "samplingIntervalMs": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "mapper": {
+                    "type": "object",
+                    "properties": {
+                      "mappingDefinitions": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "mappingDefaults": {
+                            "type": "object",
+                            "properties": {
+                              "failurePolicy": {
+                                "type": "object",
+                                "properties": {
+                                  "onFailure": {
+                                    "type": "string"
+                                  },
+                                  "logLevel": {
+                                    "type": "string"
+                                  }
+                                },
+                                "additionalProperties": true
+                              },
+                              "defaultDateFormat": {
+                                "type": "string"
+                              },
+                              "defaultTimeZone": {
+                                "type": "string"
+                              },
+                              "strictDataTypeValidation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": true
+                          },
+                          "mappingDomains": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "domainType": {
+                                  "type": "string"
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "executionPriority": {
+                                  "type": "integer"
+                                },
+                                "mappingProfiles": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "profileType": {
+                                        "type": "string"
+                                      },
+                                      "enabled": {
+                                        "type": "boolean"
+                                      },
+                                      "sequence": {
+                                        "type": "integer"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "fixedFieldMappings": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "targetField": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "dataType": {
+                                              "type": "string"
+                                            },
+                                            "enabled": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "additionalProperties": true
+                                        }
+                                      },
+                                      "fieldMappings": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "fieldId": {
+                                              "type": "string"
+                                            },
+                                            "sourceFields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "targetField": {
+                                              "type": "string"
+                                            },
+                                            "dataType": {
+                                              "type": "string"
+                                            },
+                                            "enabled": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "additionalProperties": true
+                                        }
+                                      }
+                                    },
+                                    "additionalProperties": true
+                                  }
+                                }
+                              },
+                              "additionalProperties": true
+                            }
+                          },
+                          "createdBy": {
+                            "type": "string"
+                          },
+                          "createdDate": {
+                            "type": "string"
+                          },
+                          "lastModifiedBy": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "lastModifiedDate": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "publisher": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "type": "string"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "format": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "dataflow_getdataflows",
+        "summary": "GetDataFlows",
+        "description": "GetDataFlows",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/dataflow/{dataflowId}": {
+      "delete": {
+        "operationId": "dataflow_deletetdataflow",
+        "summary": "DeletetDataFlow",
+        "description": "DeletetDataFlow",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "dataflowId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/dataflow/{dataflowName}/status/{status}": {
+      "put": {
+        "operationId": "dataflow_updatestatus",
+        "summary": "UpdateStatus",
+        "description": "UpdateStatus",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "dataflowName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ]
+      }
+    },
+    "/report/ts": {
+      "post": {
+        "operationId": "analytics_gettsreport",
+        "summary": "GetTSReport",
+        "description": "GetTSReport",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reportType": {
+                    "type": "string"
+                  },
+                  "fromDate": {
+                    "type": "string"
+                  },
+                  "toDate": {
+                    "type": "string"
+                  },
+                  "paramNames": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "strParamNames": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "strMetric": {
+                    "type": "string"
+                  },
+                  "timeInterval": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string"
+                  },
+                  "site": {
+                    "type": "string"
+                  },
+                  "zone": {
+                    "type": "string"
+                  },
+                  "line": {
+                    "type": "string"
+                  },
+                  "cell": {
+                    "type": "string"
+                  },
+                  "machineId": {
+                    "type": "string"
+                  },
+                  "machineName": {
+                    "type": "string"
+                  },
+                  "machineType": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/event/capture": {
+      "post": {
+        "operationId": "event_executioneventcapture",
+        "summary": "ExecutionEventCapture",
+        "description": "ExecutionEventCapture",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Trusted runtime header; do not invent in the LLM."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "baseEvent": {
+                    "type": "object",
+                    "properties": {
+                      "eventCategory": {
+                        "type": "string"
+                      },
+                      "eventId": {
+                        "type": "string"
+                      },
+                      "eventName": {
+                        "type": "string"
+                      },
+                      "eventDescription": {
+                        "type": "string"
+                      },
+                      "eventTime": {
+                        "type": "string"
+                      },
+                      "site": {
+                        "type": "string"
+                      },
+                      "additionalInfo": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "executiondEvent": {
+                    "type": "object",
+                    "properties": {
+                      "executionType": {
+                        "type": "string"
+                      },
+                      "executionId": {
+                        "type": "string"
+                      },
+                      "eventType": {
+                        "type": "string"
+                      },
+                      "parentExecutionType": {
+                        "type": "string"
+                      },
+                      "parentExecutionId": {
+                        "type": "string"
+                      },
+                      "resourceId": {
+                        "type": "string"
+                      },
+                      "quantity": {
+                        "type": "integer"
+                      },
+                      "qtyType": {
+                        "type": "string"
+                      },
+                      "shift": {
+                        "type": "string"
+                      },
+                      "operatorId": {
+                        "type": "string"
+                      },
+                      "sourceSystem": {
+                        "type": "string"
+                      },
+                      "meaning": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "auth_service_new_request",
+        "summary": "New Request",
+        "description": "New Request",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

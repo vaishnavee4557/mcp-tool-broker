@@ -1,170 +1,330 @@
 from __future__ import annotations
 
-import re
+import json
+import os
+from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
+from fastmcp import FastMCP
 
-from mcp_broker.models import (
-    Operation,
-    ToolDescriptor,
-    ToolPolicy,
+
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parents[1]
+ENV_FILE = PROJECT_ROOT / ".env"
+
+# PowerShell process variables must override root .env values.
+load_dotenv(
+    dotenv_path=ENV_FILE,
+    override=False,
 )
 
 
-HTTP_METHODS = {
-    "get",
-    "post",
-    "put",
-    "patch",
-    "delete",
-}
+def _json_object_env(name: str) -> dict[str, Any]:
+    raw = str(os.getenv(name, "") or "").strip()
+
+    if not raw:
+        return {}
+
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"{name} must contain valid JSON."
+        ) from exc
+
+    if not isinstance(value, dict):
+        raise RuntimeError(
+            f"{name} must contain a JSON object."
+        )
+
+    return value
 
 
-class OpenAPIToolLoader:
-    def __init__(
-        self,
-        *,
-        openapi_url: str,
-        api_base_url: str,
-        server_name: str = "factigent_api",
-    ) -> None:
-        self.openapi_url = openapi_url
-        self.api_base_url = api_base_url.rstrip("/")
-        self.server_name = server_name
+def _resolve_file(configured_path: str) -> Path:
+    path = Path(configured_path)
 
-    async def load_tools(self) -> list[ToolDescriptor]:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(self.openapi_url)
-            response.raise_for_status()
-            specification = response.json()
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
 
-        return self._create_tools(specification)
+    return path.resolve()
 
-    def _create_tools(
-        self,
-        specification: dict[str, Any],
-    ) -> list[ToolDescriptor]:
-        tools: list[ToolDescriptor] = []
 
-        for api_path, path_data in specification.get("paths", {}).items():
-            if not isinstance(path_data, dict):
-                continue
+SOURCE_NAME = str(
+    os.getenv(
+        "OPENAPI_SOURCE_NAME",
+        "predictive_maintenance",
+    )
+    or "predictive_maintenance"
+).strip()
 
-            for method, operation in path_data.items():
-                if method.lower() not in HTTP_METHODS:
-                    continue
+sources = _json_object_env(
+    "OPENAPI_SOURCES_JSON"
+)
 
-                if not isinstance(operation, dict):
-                    continue
+source_config: dict[str, Any] = {}
 
-                operation_id = (
-                    operation.get("operationId")
-                    or self._make_name(method, api_path)
-                )
+if sources:
+    selected = sources.get(SOURCE_NAME)
 
-                summary = (
-                    operation.get("summary")
-                    or operation.get("description")
-                    or operation_id
-                )
+    if selected is None:
+        raise RuntimeError(
+            f"OPENAPI_SOURCE_NAME={SOURCE_NAME!r} was not found "
+            "inside OPENAPI_SOURCES_JSON."
+        )
 
-                tags = operation.get("tags", [])
+    if not isinstance(selected, dict):
+        raise RuntimeError(
+            f"OpenAPI source {SOURCE_NAME!r} must be a JSON object."
+        )
 
-                input_schema = self._create_input_schema(
-                    operation
-                )
+    source_config = selected
 
-                tools.append(
-                    ToolDescriptor(
-                        server_name=self.server_name,
-                        name=operation_id,
-                        description=summary,
-                        input_schema=input_schema,
-                        base_url=self.api_base_url,
-                        http_method=method.upper(),
-                        api_path=api_path,
-                        policy=ToolPolicy(
-                            domain=tags[0].lower() if tags else "general",
-                            operation=self._get_operation(method),
-                            summary=summary,
-                            keywords=[
-                                *tags,
-                                *input_schema.get(
-                                    "properties",
-                                    {},
-                                ).keys(),
-                            ],
-                        ),
-                    )
-                )
 
-        return tools
+OPENAPI_URL = str(
+    source_config.get(
+        "openapi_url",
+        os.getenv("OPENAPI_URL", ""),
+    )
+    or ""
+).strip()
 
-    def _create_input_schema(
-        self,
-        operation: dict[str, Any],
-    ) -> dict[str, Any]:
-        properties: dict[str, Any] = {}
-        required: list[str] = []
+OPENAPI_FILE = str(
+    source_config.get(
+        "openapi_file",
+        os.getenv("OPENAPI_FILE", ""),
+    )
+    or ""
+).strip()
 
-        for parameter in operation.get("parameters", []):
-            name = parameter.get("name")
+API_BASE_URL = str(
+    source_config.get(
+        "api_base_url",
+        os.getenv(
+            "FACTIGENT_API_BASE_URL",
+            os.getenv("API_BASE_URL", ""),
+        ),
+    )
+    or ""
+).strip().rstrip("/")
 
-            if not name:
-                continue
+if not API_BASE_URL:
+    raise RuntimeError(
+        f"No API base URL is configured for OpenAPI source "
+        f"{SOURCE_NAME!r}."
+    )
 
-            schema = parameter.get(
-                "schema",
-                {"type": "string"},
+
+MCP_HOST = str(
+    os.getenv("MCP_HOST", "127.0.0.1")
+    or "127.0.0.1"
+).strip()
+
+MCP_PORT = int(
+    os.getenv("MCP_PORT", "8001")
+)
+
+MCP_TRANSPORT = str(
+    os.getenv("MCP_TRANSPORT", "http")
+    or "http"
+).strip()
+
+HTTP_TIMEOUT_SECONDS = float(
+    os.getenv(
+        "HTTP_TIMEOUT_SECONDS",
+        "30",
+    )
+)
+
+
+API_BEARER_TOKEN = str(
+    os.getenv(
+        "API_BEARER_TOKEN",
+        os.getenv("FACTIGENT_API_TOKEN", ""),
+    )
+    or ""
+).strip()
+
+API_HEADERS_JSON = _json_object_env(
+    "API_HEADERS_JSON"
+)
+
+OPENAPI_HEADERS_JSON = _json_object_env(
+    "OPENAPI_HEADERS_JSON"
+)
+
+
+def build_api_headers() -> dict[str, str]:
+    headers: dict[str, str] = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+    if API_BEARER_TOKEN:
+        headers["Authorization"] = (
+            f"Bearer {API_BEARER_TOKEN}"
+        )
+
+    for key, value in API_HEADERS_JSON.items():
+        if value is None:
+            continue
+
+        headers[str(key)] = str(value)
+
+    return headers
+
+
+def build_openapi_headers() -> dict[str, str]:
+    headers: dict[str, str] = {
+        "Accept": "application/json",
+    }
+
+    if API_BEARER_TOKEN:
+        headers["Authorization"] = (
+            f"Bearer {API_BEARER_TOKEN}"
+        )
+
+    for key, value in OPENAPI_HEADERS_JSON.items():
+        if value is None:
+            continue
+
+        headers[str(key)] = str(value)
+
+    return headers
+
+
+def load_openapi_spec() -> dict[str, Any]:
+    if OPENAPI_FILE:
+        spec_path = _resolve_file(
+            OPENAPI_FILE
+        )
+
+        if not spec_path.exists():
+            raise RuntimeError(
+                f"OPENAPI_FILE was not found: {spec_path}"
             )
 
-            properties[name] = {
-                **schema,
-                "description": parameter.get(
-                    "description",
-                    "",
-                ),
-                "x-parameter-location": parameter.get(
-                    "in",
-                    "query",
-                ),
-            }
+        try:
+            spec = json.loads(
+                spec_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Invalid JSON in OpenAPI file: {spec_path}"
+            ) from exc
 
-            if parameter.get("required"):
-                required.append(name)
+        source_label = str(spec_path)
 
-        result: dict[str, Any] = {
-            "type": "object",
-            "properties": properties,
-        }
+    elif OPENAPI_URL:
+        try:
+            response = httpx.get(
+                OPENAPI_URL,
+                headers=build_openapi_headers(),
+                timeout=HTTP_TIMEOUT_SECONDS,
+                follow_redirects=True,
+            )
 
-        if required:
-            result["required"] = required
+            response.raise_for_status()
 
-        return result
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(
+                "Timed out while downloading OpenAPI from "
+                f"{OPENAPI_URL}"
+            ) from exc
 
-    @staticmethod
-    def _get_operation(method: str) -> Operation:
-        method = method.lower()
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(
+                "OpenAPI server returned an error. "
+                f"Status={exc.response.status_code}, "
+                f"URL={OPENAPI_URL}, "
+                f"Response={exc.response.text[:1000]}"
+            ) from exc
 
-        if method == "get":
-            return Operation.READ
+        except httpx.RequestError as exc:
+            raise RuntimeError(
+                f"Could not connect to OpenAPI URL "
+                f"{OPENAPI_URL}: {exc!r}"
+            ) from exc
 
-        if method == "delete":
-            return Operation.ADMIN
+        try:
+            spec = response.json()
+        except ValueError as exc:
+            raise RuntimeError(
+                "OpenAPI URL did not return valid JSON."
+            ) from exc
 
-        return Operation.WRITE
+        source_label = OPENAPI_URL
 
-    @staticmethod
-    def _make_name(
-        method: str,
-        api_path: str,
-    ) -> str:
-        clean_path = re.sub(
-            r"[^a-zA-Z0-9]+",
-            "_",
-            api_path,
-        ).strip("_")
+    else:
+        raise RuntimeError(
+            f"No openapi_url/openapi_file is configured for "
+            f"source {SOURCE_NAME!r}."
+        )
 
-        return f"{method.lower()}_{clean_path}"
+    if not isinstance(spec, dict):
+        raise RuntimeError(
+            "OpenAPI specification must be a JSON object."
+        )
+
+    paths = spec.get("paths")
+
+    if not isinstance(paths, dict):
+        raise RuntimeError(
+            "OpenAPI specification has no valid 'paths' object."
+        )
+
+    print(
+        f"OpenAPI source selected: {SOURCE_NAME}"
+    )
+    print(
+        f"OpenAPI specification loaded from: {source_label}"
+    )
+
+    return spec
+
+
+def count_openapi_operations(
+    spec: dict[str, Any],
+) -> int:
+    supported_methods = {
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+        "options",
+        "head",
+    }
+
+    paths = spec.get("paths", {})
+
+    if not isinstance(paths, dict):
+        return 0
+
+    return sum(
+        1
+        for path_definition in paths.values()
+        if isinstance(path_definition, dict)
+        for method in path_definition.keys()
+        if str(method).casefold()
+        in supported_methods
+    )
+
+
+openapi_spec = load_openapi_spec()
+
+api_client = httpx.AsyncClient(
+    base_url=API_BASE_URL,
+    headers=build_api_headers(),
+    timeout=HTTP_TIMEOUT_SECONDS,
+    follow_redirects=True,
+)
+
+mcp = FastMCP.from_openapi(
+    openapi_spec=openapi_spec,
+    client=api_client,
+    name=f"Factigent {SOURCE_NAME} MCP Server",
+)

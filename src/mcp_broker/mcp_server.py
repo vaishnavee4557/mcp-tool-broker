@@ -1,270 +1,75 @@
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
-from typing import Any
-
-import httpx
-from dotenv import load_dotenv
-from fastmcp import FastMCP
-
-# Paths and environment
-
-CURRENT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = CURRENT_DIR.parents[1]
-ENV_FILE = CURRENT_DIR / ".env"
-
-load_dotenv(
-    dotenv_path=ENV_FILE,
-    override=True,
-)
-
-# Configuration 
-
-OPENAPI_URL = os.getenv(
-    "OPENAPI_URL",
-    "",
-).strip()
-
-OPENAPI_FILE = os.getenv(
-    "OPENAPI_FILE",
-    "",
-).strip()
-
-API_BASE_URL = (
-    os.getenv("FACTIGENT_API_BASE_URL")
-    or os.getenv("API_BASE_URL")
-    or ""
-).rstrip("/")
-
-API_BEARER_TOKEN = (
-    os.getenv("API_BEARER_TOKEN")
-    or os.getenv("FACTIGENT_API_TOKEN")
-    or ""
-).strip()
-
-HTTP_TIMEOUT_SECONDS = float(
-    os.getenv(
-        "HTTP_TIMEOUT_SECONDS",
-        "30",
-    )
-)
-
-MCP_HOST = os.getenv(
-    "MCP_HOST",
-    "127.0.0.1",
-)
-
-MCP_PORT = int(
-    os.getenv(
-        "MCP_PORT",
-        "8001",
-    )
+from mcp_broker.openapi_loader import (
+    API_BASE_URL,
+    MCP_HOST,
+    MCP_PORT,
+    MCP_TRANSPORT,
+    SOURCE_NAME,
+    count_openapi_operations,
+    mcp,
+    openapi_spec,
 )
 
 
-if not API_BASE_URL:
-    raise RuntimeError(
-        "FACTIGENT_API_BASE_URL or API_BASE_URL "
-        "is missing from .env"
-    )
-
-
-# Common API headers
-
-def build_api_headers() -> dict[str, str]:
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
-
-    if API_BEARER_TOKEN:
-        headers["Authorization"] = (
-            f"Bearer {API_BEARER_TOKEN}"
-        )
-
-    return headers
-
-
-
-# Load Swagger / OpenAPI specification
-
-def resolve_openapi_file(
-    configured_path: str,
-) -> Path:
-    path = Path(configured_path)
-
-    if not path.is_absolute():
-        path = PROJECT_ROOT / path
-
-    return path.resolve()
-
-
-def load_openapi_spec() -> dict[str, Any]:
+def main() -> None:
     """
-    Load the OpenAPI specification.
+    Start one MCP process for the OpenAPI source selected by configuration.
 
-    Priority:
-    1. Local OPENAPI_FILE
-    2. Remote OPENAPI_URL
+    Source selection, API base URL, authentication headers, OpenAPI loading,
+    and FastMCP tool generation all live in openapi_loader.py.
+
+    This file is intentionally only the runtime entry point so that the same
+    MCP code can serve different Factigent API sources without duplicating
+    loader logic or adding endpoint-specific Python code.
     """
 
-    if OPENAPI_FILE:
-        spec_path = resolve_openapi_file(
-            OPENAPI_FILE
-        )
-
-        if not spec_path.exists():
-            raise RuntimeError(
-                f"OPENAPI_FILE was not found: {spec_path}"
-            )
-
-        try:
-            spec_data = json.loads(
-                spec_path.read_text(
-                    encoding="utf-8",
-                )
-            )
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"Invalid JSON in OpenAPI file: {spec_path}"
-            ) from exc
-
-        if not isinstance(spec_data, dict):
-            raise RuntimeError(
-                "OpenAPI file must contain a JSON object"
-            )
-
-        print(
-            "OpenAPI specification loaded from file:",
-            spec_path,
-        )
-
-        return spec_data
-
-    if OPENAPI_URL:
-        try:
-            response = httpx.get(
-                OPENAPI_URL,
-                headers=build_api_headers(),
-                timeout=HTTP_TIMEOUT_SECONDS,
-                follow_redirects=True,
-            )
-
-            response.raise_for_status()
-
-        except httpx.TimeoutException as exc:
-            raise RuntimeError(
-                "Timed out while downloading OpenAPI "
-                f"specification from {OPENAPI_URL}"
-            ) from exc
-
-        except httpx.HTTPStatusError as exc:
-            raise RuntimeError(
-                "OpenAPI server returned an error. "
-                f"Status={exc.response.status_code}, "
-                f"URL={OPENAPI_URL}, "
-                f"Response={exc.response.text[:1000]}"
-            ) from exc
-
-        except httpx.RequestError as exc:
-            raise RuntimeError(
-                "Could not connect to OpenAPI URL "
-                f"{OPENAPI_URL}: {exc!r}"
-            ) from exc
-
-        try:
-            spec_data = response.json()
-        except ValueError as exc:
-            raise RuntimeError(
-                "OpenAPI URL did not return valid JSON"
-            ) from exc
-
-        if not isinstance(spec_data, dict):
-            raise RuntimeError(
-                "OpenAPI response must be a JSON object"
-            )
-
-        print(
-            "OpenAPI specification loaded from URL:",
-            OPENAPI_URL,
-        )
-
-        return spec_data
-
-    raise RuntimeError(
-        "Set either OPENAPI_FILE or OPENAPI_URL in .env"
-    )
-
-
-# --------------------------------------------------
-# Generate MCP tools automatically
-# --------------------------------------------------
-
-openapi_spec = load_openapi_spec()
-
-api_client = httpx.AsyncClient(
-    base_url=API_BASE_URL,
-    headers=build_api_headers(),
-    timeout=HTTP_TIMEOUT_SECONDS,
-    follow_redirects=True,
-)
-
-mcp = FastMCP.from_openapi(
-    openapi_spec=openapi_spec,
-    client=api_client,
-    name="Factigent Swagger MCP Server",
-)
-
-
-# --------------------------------------------------
-# Start MCP server
-# --------------------------------------------------
-
-if __name__ == "__main__":
-    paths = openapi_spec.get(
-        "paths",
-        {},
-    )
-
-    operation_count = sum(
-        1
-        for path_definition in paths.values()
-        if isinstance(path_definition, dict)
-        for method in path_definition
-        if method.lower()
-        in {
-            "get",
-            "post",
-            "put",
-            "patch",
-            "delete",
-            "options",
-            "head",
-        }
+    operation_count = count_openapi_operations(
+        openapi_spec
     )
 
     print()
     print(
-        "Factigent API base URL:",
+        "========== FACTIGENT MCP SERVER =========="
+    )
+    print(
+        "OpenAPI source:",
+        SOURCE_NAME,
+    )
+    print(
+        "API base URL:",
         API_BASE_URL,
     )
     print(
-        "OpenAPI operations found:",
+        "OpenAPI operations exposed:",
         operation_count,
     )
     print(
         "Local MCP endpoint:",
         f"http://{MCP_HOST}:{MCP_PORT}/mcp",
     )
+    print(
+        "Transport:",
+        MCP_TRANSPORT,
+    )
     print()
 
+    if operation_count <= 0:
+        raise RuntimeError(
+            "The selected OpenAPI specification contains no "
+            "supported API operations, so no MCP tools can be exposed."
+        )
+
     mcp.run(
-        transport="http",
+        transport=MCP_TRANSPORT,
         host=MCP_HOST,
         port=MCP_PORT,
     )
+
+
+if __name__ == "__main__":
+    main()
+    
 # from __future__ import annotations
 
 # import os

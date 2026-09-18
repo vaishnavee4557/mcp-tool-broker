@@ -1,6 +1,6 @@
 .env
 .venv/
 __pycache__/
-*.pyc
-*.env
-.vscode/
+*.py[cod]
+embedding_test.json
+*.code-workspace

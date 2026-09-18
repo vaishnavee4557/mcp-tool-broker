@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from enum import StrEnum
 from typing import Any, Literal
@@ -24,16 +25,45 @@ class ToolPolicy(BaseModel):
     summary: str | None = None
     enabled: bool = True
 
+    # Explicit override for read-only POST/report/search tools.
+    read_only: bool | None = None
+
 
 class ToolDescriptor(BaseModel):
+    """
+    Normalized live MCP/OpenAPI tool.
+
+    searchable_text is writable because registry.py enriches it before
+    persistence/embedding.
+    """
+
+    model_config = ConfigDict(
+        extra="ignore",
+        validate_assignment=True,
+    )
+
     server_name: str
     name: str
     description: str = ""
+
     input_schema: dict[str, Any] = Field(default_factory=dict)
+
+    # Optional response metadata when provided by the MCP/OpenAPI adapter.
+    output_schema: dict[str, Any] | None = None
+    response_schema: dict[str, Any] | None = None
+
+    # MCP annotations such as readOnlyHint.
+    annotations: dict[str, Any] | None = None
+
     policy: ToolPolicy = Field(default_factory=ToolPolicy)
+
     base_url: str | None = None
     http_method: str | None = None
     api_path: str | None = None
+
+    # Populated/enriched by registry.py.
+    searchable_text: str = ""
+
     @computed_field
     @property
     def registry_id(self) -> str:
@@ -42,30 +72,96 @@ class ToolDescriptor(BaseModel):
     @computed_field
     @property
     def llm_name(self) -> str:
-        raw = f"{self.server_name}__{self.name}"
-        clean = re.sub(r"[^a-zA-Z0-9_-]", "_", raw)
-        return clean[:64]
+        """
+        Produce a stable tool alias no longer than 64 characters.
 
-    @computed_field
+        Long names receive a hash suffix to avoid collisions caused by
+        simple truncation.
+        """
+
+        raw = f"{self.server_name}__{self.name}"
+
+        clean = re.sub(
+            r"[^a-zA-Z0-9_-]",
+            "_",
+            raw,
+        )
+
+        if len(clean) <= 64:
+            return clean
+
+        suffix = hashlib.sha1(
+            clean.encode("utf-8")
+        ).hexdigest()[:10]
+
+        prefix_length = 64 - len(suffix) - 1
+
+        return (
+            clean[:prefix_length]
+            + "_"
+            + suffix
+        )
+
     @property
-    def searchable_text(self) -> str:
-        summary = self.policy.summary or self.description
-        return " ".join(
-            [
-                self.name.replace("_", " "),
-                summary,
-                self.policy.domain.replace("_", " "),
-                " ".join(self.policy.keywords),
-            ]
-        ).strip()
+    def effective_read_only(self) -> bool | None:
+        """
+        Return an explicit read-only hint when available.
+
+        None means the caller should use its conservative fallback.
+        """
+
+        if self.policy.read_only is not None:
+            return self.policy.read_only
+
+        if isinstance(self.annotations, dict):
+            for key in (
+                "readOnlyHint",
+                "read_only",
+                "is_read_only",
+            ):
+                value = self.annotations.get(key)
+
+                if isinstance(value, bool):
+                    return value
+
+        if self.http_method:
+            method = self.http_method.strip().upper()
+
+            if method in {
+                "GET",
+                "HEAD",
+                "OPTIONS",
+            }:
+                return True
+
+        return None
 
     def as_llm_tool(self) -> dict[str, Any]:
+        """
+        Tool schema exposed to the LLM.
+
+        Only the live input schema controls which parameters are valid.
+        Optional site/zone/line/cell fields therefore remain optional.
+        """
+
+        parameters = (
+            self.input_schema
+            or {
+                "type": "object",
+                "properties": {},
+            }
+        )
+
         return {
             "type": "function",
             "function": {
                 "name": self.llm_name,
-                "description": self.policy.summary or self.description or self.name,
-                "parameters": self.input_schema or {"type": "object", "properties": {}},
+                "description": (
+                    self.policy.summary
+                    or self.description
+                    or self.name
+                ),
+                "parameters": parameters,
             },
         }
 
@@ -84,8 +180,14 @@ class ChatTurn(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    query: str = Field(min_length=1, max_length=20_000)
-    session_id: str = Field(min_length=1, max_length=200)
+    query: str = Field(
+        min_length=1,
+        max_length=20_000,
+    )
+    session_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
 
 
 class CandidateInfo(BaseModel):

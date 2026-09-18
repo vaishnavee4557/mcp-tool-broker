@@ -1,0 +1,34 @@
+services:
+
+  postgres:
+
+    image: pgvector/pgvector:pg17
+
+    container_name: factigent_pgvector
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: factigent_chatbot
+      POSTGRES_USER: factigent_app
+      POSTGRES_PASSWORD: factigent_dev_password
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - factigent_pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U factigent_app -d factigent_chatbot"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
+volumes:
+  factigent_pgdata:docker ps --filter "name=factigent_pgvector"

@@ -1,34 +1,74 @@
 {
   "defaults": {
-    "factigent": {
-      "domain": "telemetry",
+    "factigent_api": {
+      "domain": "general",
       "operation": "read",
-      "required_scopes": ["machines:read"],
-      "keywords": ["machine", "sensor", "telemetry", "reading"],
+      "required_scopes": [],
+      "required_roles": [],
+      "keywords": [],
+      "enabled": true
+    },
+    "predictive_maintenance": {
+      "domain": "predictive_maintenance",
+      "operation": "read",
+      "required_scopes": [],
+      "required_roles": [],
+      "keywords": [],
+      "enabled": true
+    },
+    "factigent_platform": {
+      "domain": "factigent_platform",
+      "operation": "read",
+      "required_scopes": [],
+      "required_roles": [],
+      "keywords": [],
       "enabled": true
     }
   },
   "tools": {
-    "factigent.get_latest_readings": {
+    "factigent_api.get_latest_readings": {
       "domain": "telemetry",
       "operation": "read",
-      "required_scopes": ["machines:read"],
-      "keywords": ["latest", "current", "temperature", "vibration", "voltage", "humidity"],
-      "summary": "Get the latest selected sensor readings for one machine"
+      "keywords": [
+        "latest",
+        "current",
+        "sensor",
+        "reading",
+        "temperature",
+        "vibration",
+        "voltage",
+        "humidity"
+      ],
+      "summary": "Get the latest selected sensor readings for one machine",
+      "read_only": true
     },
-    "factigent.get_anomalies": {
+    "factigent_api.get_anomalies": {
       "domain": "predictive_maintenance",
       "operation": "read",
-      "required_scopes": ["anomalies:read"],
-      "keywords": ["anomaly", "abnormal", "fault", "outlier", "predictive maintenance"],
-      "summary": "Get recent anomaly detections for one machine"
+      "keywords": [
+        "anomaly",
+        "abnormal",
+        "fault",
+        "outlier",
+        "predictive maintenance"
+      ],
+      "summary": "Get recent anomaly detections for one machine",
+      "read_only": true
     },
-    "factigent.create_maintenance_ticket": {
+    "factigent_api.create_maintenance_ticket": {
       "domain": "maintenance",
       "operation": "write",
-      "required_scopes": ["tickets:write"],
-      "keywords": ["ticket", "incident", "maintenance", "create", "service"],
-      "summary": "Create a maintenance ticket for a machine problem"
+      "keywords": [
+        "ticket",
+        "incident",
+        "maintenance",
+        "create",
+        "service"
+      ],
+      "summary": "Create a maintenance ticket for a machine problem",
+      "read_only": false
     }
   }
 }
+
+  

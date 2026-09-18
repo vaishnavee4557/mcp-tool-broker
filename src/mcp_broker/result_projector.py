@@ -11,7 +11,7 @@ class ResultProjector:
     def __init__(self, *, max_rows: int, max_chars: int, max_depth: int = 8) -> None:
         self.max_rows = max_rows
         self.max_chars = max_chars
-        self.max_depth = max_depth
+        self.max_depth = max_depth 
 
     def project(self, value: Any) -> Any:
         normalized = self._trim(value, depth=0)

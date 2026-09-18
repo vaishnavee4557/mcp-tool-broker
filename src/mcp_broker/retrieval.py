@@ -6,71 +6,216 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from difflib import get_close_matches
 from typing import Any
-from mcp_broker.tool_knowledge import build_tool_knowledge_text
-from mcp_broker.embeddings import EmbeddingProvider
+
 from mcp_broker.models import (
     RetrievalCandidate,
     ToolDescriptor,
     UserContext,
 )
+from mcp_broker.pg_retriever import PgVectorToolRetriever
 from mcp_broker.security import AccessPolicy
 
+
+# ============================================================
+# GENERIC TEXT NORMALIZATION
+# ============================================================
 
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
-_DOMAIN_VOCAB = {
-    "temperature", "temp", "vibration", "voltage", "humidity",
-    "pressure", "power", "frequency", "current", "level", "flow",
-    "speed", "rpm", "sensor", "sensors", "reading", "readings",
-    "telemetry", "measurement", "measurements", "parameter",
-    "parameters", "machine", "machines", "anomaly", "anomalies",
-    "abnormal", "risk", "risky", "health", "severity", "alert",
-    "alerts", "maintenance", "ticket", "incident", "pipeline",
-    "training", "trained", "model", "models", "feature",
-    "config", "configuration",
+# Generic language concepts used only for retrieval.
+# These are not API names, machine names, sensor names, or endpoint rules.
+_OPERATION_CONCEPTS: dict[str, set[str]] = {
+    "count": {
+        "count",
+        "counts",
+        "number",
+        "numbers",
+        "total",
+        "totals",
+        "quantity",
+        "howmany",
+    },
+    "list": {
+        "list",
+        "lists",
+        "listing",
+        "listings",
+        "available",
+        "availability",
+        "names",
+        "name",
+        "which",
+    },
+    "detail": {
+        "detail",
+        "details",
+        "information",
+        "info",
+        "describe",
+        "description",
+    },
+    "current": {
+        "current",
+        "latest",
+        "recent",
+        "newest",
+        "now",
+    },
+    "history": {
+        "history",
+        "historical",
+        "trend",
+        "trends",
+        "timeline",
+        "chart",
+        "charts",
+        "graph",
+        "graphs",
+    },
+    "risk": {
+        "risk",
+        "risky",
+        "severity",
+        "critical",
+        "warning",
+    },
+    "health": {
+        "health",
+        "healthy",
+        "status",
+        "condition",
+    },
+    "anomaly": {
+        "anomaly",
+        "anomalies",
+        "abnormal",
+        "abnormality",
+        "outlier",
+        "outliers",
+        "unusual",
+    },
+    "report": {
+        "report",
+        "reports",
+        "summary",
+        "summaries",
+        "analytics",
+    },
 }
+
+
+def _singular_forms(token: str) -> list[str]:
+    forms = [token]
+
+    if len(token) > 4 and token.endswith("ies"):
+        forms.append(token[:-3] + "y")
+    elif len(token) > 4 and token.endswith("ses"):
+        forms.append(token[:-2])
+    elif (
+        len(token) > 4
+        and token.endswith("s")
+        and not token.endswith(("ss", "us", "is"))
+    ):
+        forms.append(token[:-1])
+
+    return forms
 
 
 def tokenize(text: str) -> list[str]:
     """
-    Normalize normal text, snake_case, kebab-case and camelCase
-    into comparable lowercase tokens.
+    Convert arbitrary text into case-insensitive retrieval tokens.
+
+    This function is retrieval-only. It never changes user values that are
+    later sent to an API.
     """
-    normalized = _CAMEL_BOUNDARY_RE.sub(" ", str(text))
+
+    normalized = _CAMEL_BOUNDARY_RE.sub(
+        " ",
+        str(text or ""),
+    )
+
     normalized = (
         normalized
         .replace("_", " ")
         .replace("-", " ")
         .replace("/", " ")
         .replace(".", " ")
+        .replace(":", " ")
     )
-    return _TOKEN_RE.findall(normalized.lower())
 
-
-def cosine_similarity(
-    left: list[float],
-    right: list[float],
-) -> float:
-    """
-    True cosine similarity.
-    """
-    if not left or not right:
-        return 0.0
-
-    dot = sum(
-        a * b
-        for a, b in zip(left, right, strict=False)
+    raw_tokens = _TOKEN_RE.findall(
+        normalized.casefold()
     )
-    left_norm = math.sqrt(sum(value * value for value in left))
-    right_norm = math.sqrt(sum(value * value for value in right))
 
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
+    tokens: list[str] = []
 
-    return dot / (left_norm * right_norm)
+    for token in raw_tokens:
+        tokens.extend(
+            _singular_forms(token)
+        )
 
+    return list(
+        dict.fromkeys(tokens)
+    )
+
+
+def _operation_labels(
+    text: str,
+) -> set[str]:
+    """
+    Convert natural-language operation words into generic concepts such as
+    count/list/history/current. No endpoint-specific logic is used.
+    """
+
+    tokens = set(
+        tokenize(text)
+    )
+
+    labels: set[str] = set()
+
+    for label, words in _OPERATION_CONCEPTS.items():
+        if tokens.intersection(words):
+            labels.add(label)
+
+    # "how many" is commonly split into two tokens.
+    if "how" in tokens and "many" in tokens:
+        labels.add("count")
+
+    return labels
+
+
+def _expand_operation_language(
+    query: str,
+) -> str:
+    """
+    Append canonical generic operation labels for lexical/semantic retrieval.
+
+    Example:
+        "number of available machines"
+        -> "number of available machines count list"
+
+    Original query remains unchanged outside retrieval.
+    """
+
+    labels = sorted(
+        _operation_labels(query)
+    )
+
+    if not labels:
+        return query
+
+    return (
+        str(query).strip()
+        + " "
+        + " ".join(labels)
+    ).strip()
+
+
+# ============================================================
+# LIVE MCP / OPENAPI METADATA EXTRACTION
+# ============================================================
 
 def _collect_schema_text(
     value: Any,
@@ -78,38 +223,56 @@ def _collect_schema_text(
     *,
     depth: int = 0,
 ) -> None:
-    """
-    Add useful parameter names/descriptions/enums from a JSON schema
-    to the text used by the retriever.
-
-    This is important for Swagger-generated tools because the operation
-    summary alone is often too weak for retrieval.
-    """
-    if depth > 8:
+    if depth > 10:
         return
 
     if isinstance(value, dict):
-        title = value.get("title")
-        description = value.get("description")
-        enum_values = value.get("enum")
-        properties = value.get("properties")
+        for field in (
+            "title",
+            "description",
+            "type",
+            "format",
+        ):
+            item = value.get(field)
+            if isinstance(item, str) and item.strip():
+                parts.append(item)
 
-        if isinstance(title, str):
-            parts.append(title)
-
-        if isinstance(description, str):
-            parts.append(description)
-
-        if isinstance(enum_values, list):
+        # Keep required field names searchable, but do not duplicate/boost them.
+        required = value.get("required")
+        if isinstance(required, list):
             parts.extend(
                 str(item)
-                for item in enum_values
-                if isinstance(item, (str, int, float))
+                for item in required
+                if isinstance(item, str) and item.strip()
             )
 
+        enum_values = value.get("enum")
+        if isinstance(enum_values, list):
+            for item in enum_values:
+                if isinstance(
+                    item,
+                    (str, int, float, bool),
+                ):
+                    parts.append(str(item))
+
+        const_value = value.get("const")
+        if isinstance(
+            const_value,
+            (str, int, float, bool),
+        ):
+            parts.append(
+                str(const_value)
+            )
+
+        properties = value.get("properties")
         if isinstance(properties, dict):
-            for property_name, property_schema in properties.items():
-                parts.append(str(property_name))
+            for (
+                property_name,
+                property_schema,
+            ) in properties.items():
+                parts.append(
+                    str(property_name)
+                )
                 _collect_schema_text(
                     property_schema,
                     parts,
@@ -124,8 +287,25 @@ def _collect_schema_text(
                 depth=depth + 1,
             )
 
-        # Request bodies can contain nested schemas.
-        for key in ("allOf", "anyOf", "oneOf"):
+        additional_properties = value.get(
+            "additionalProperties"
+        )
+        if isinstance(
+            additional_properties,
+            (dict, list),
+        ):
+            _collect_schema_text(
+                additional_properties,
+                parts,
+                depth=depth + 1,
+            )
+
+        for key in (
+            "allOf",
+            "anyOf",
+            "oneOf",
+            "prefixItems",
+        ):
             children = value.get(key)
             if isinstance(children, list):
                 for child in children:
@@ -135,238 +315,196 @@ def _collect_schema_text(
                         depth=depth + 1,
                     )
 
+    elif isinstance(value, list):
+        for child in value:
+            _collect_schema_text(
+                child,
+                parts,
+                depth=depth + 1,
+            )
 
-def build_tool_text(tool: ToolDescriptor) -> str:
-    """
-    Build richer searchable text from:
-    - MCP tool name
-    - MCP description
-    - existing searchable_text
-    - input parameter/schema names
-    - policy domain
-    - policy keywords
-    """
-    parts: list[str] = [
-        tool.name,
-        tool.description or "",
-        getattr(tool, "searchable_text", "") or "",
-    ]
 
-    policy = getattr(tool, "policy", None)
+def build_schema_text(
+    tool: ToolDescriptor,
+) -> str:
+    schema = getattr(
+        tool,
+        "input_schema",
+        None,
+    )
 
-    if policy is not None:
-        domain = getattr(policy, "domain", "")
-        keywords = getattr(policy, "keywords", [])
+    if not isinstance(schema, dict):
+        return ""
 
-        if domain:
-            parts.append(str(domain))
+    parts: list[str] = []
 
-        if keywords:
-            parts.extend(str(item) for item in keywords)
-
-    input_schema = getattr(tool, "input_schema", None)
-
-    if isinstance(input_schema, dict):
-        _collect_schema_text(
-            input_schema,
-            parts,
-        )
+    _collect_schema_text(
+        schema,
+        parts,
+    )
 
     return " ".join(
         part
         for part in parts
-        if part
+        if str(part).strip()
     )
 
 
-def _expand_by_intent(query: str) -> str:
-    """
-    Add generic synonyms that commonly appear in industrial APIs.
+def _metadata_value(
+    tool: ToolDescriptor,
+    attribute: str,
+) -> str:
+    value = getattr(
+        tool,
+        attribute,
+        None,
+    )
 
-    This is not tied to one endpoint name. It helps a query such as
-    "show MAC1 temperature" match tools described as "telemetry",
-    "sensor readings", "measurements", etc.
-    """
-    tokens = set(tokenize(query))
-    extra: set[str] = set()
+    if value is None:
+        return ""
 
-    sensor_words = {
-        "temperature",
-        "temp",
-        "vibration",
-        "voltage",
-        "humidity",
-        "pressure",
-        "power",
-        "frequency",
-        "current",
-        "level",
-        "flow",
-        "speed",
-        "rpm",
-        "sensor",
-        "sensors",
-        "reading",
-        "readings",
-        "telemetry",
-        "measurement",
-        "measurements",
-        "parameter",
-        "parameters",
-        "value",
-        "values",
-    }
-
-    if tokens.intersection(sensor_words):
-        extra.update(
-            {
-                "sensor",
-                "telemetry",
-                "reading",
-                "readings",
-                "measurement",
-                "measurements",
-                "parameter",
-                "parameters",
-                "value",
-                "values",
-                "latest",
-                "current",
-                "machine",
-                "data",
-            }
-        )
-
-    machine_words = {"machine", "machines"}
-    listing_words = {
-        "all",
-        "list",
-        "show",
-        "available",
-        "names",
-        "name",
-        "count",
-        "which",
-        "what",
-    }
-
-    if (
-        tokens.intersection(machine_words)
-        and tokens.intersection(listing_words)
+    if isinstance(
+        value,
+        (list, tuple, set),
     ):
-        extra.update(
-            {
-                "machine",
-                "machines",
-                "list",
-                "available",
-                "name",
-                "names",
-                "id",
-                "ids",
-            }
+        return " ".join(
+            str(item)
+            for item in value
+            if str(item).strip()
         )
 
-    risk_words = {
-        "risk",
-        "risky",
-        "health",
-        "severity",
-        "unhealthy",
-        "alert",
-        "alerts",
-    }
-
-    if tokens.intersection(risk_words):
-        extra.update(
-            {
-                "risk",
-                "risky",
-                "health",
-                "severity",
-                "alert",
-                "alerts",
-                "anomaly",
-                "machine",
-            }
+    if isinstance(value, dict):
+        return " ".join(
+            f"{key} {item}"
+            for key, item in value.items()
         )
 
-    anomaly_words = {
-        "anomaly",
-        "anomalies",
-        "abnormal",
-        "abnormality",
-        "unusual",
-        "outlier",
-        "outliers",
-    }
+    return str(value)
 
-    if tokens.intersection(anomaly_words):
-        extra.update(
-            {
-                "anomaly",
-                "anomalies",
-                "abnormal",
-                "outlier",
-                "alert",
-                "machine",
-            }
-        )
 
-    ticket_words = {
-        "ticket",
-        "tickets",
-        "maintenance",
-        "incident",
-        "servicenow",
-        "jira",
-    }
+def build_tool_text(
+    tool: ToolDescriptor,
+) -> str:
+    """
+    Build retrieval text from live MCP/OpenAPI metadata.
 
-    action_words = {
-        "create",
-        "raise",
-        "open",
-        "submit",
-    }
+    Safe generic sources are used when present:
+    name, description, searchable_text, operation id, path, method, tags,
+    input schema, output/response schema, and policy metadata.
+    """
 
-    if (
-        tokens.intersection(ticket_words)
-        and tokens.intersection(action_words)
+    parts: list[str] = [
+        _metadata_value(tool, "name"),
+        _metadata_value(tool, "description"),
+        _metadata_value(tool, "searchable_text"),
+        _metadata_value(tool, "operation_id"),
+        _metadata_value(tool, "operationId"),
+        _metadata_value(tool, "path"),
+        _metadata_value(tool, "method"),
+        _metadata_value(tool, "tags"),
+        build_schema_text(tool),
+    ]
+
+    # Different registry implementations may expose response metadata using
+    # different attribute names. getattr keeps this backward compatible.
+    for attribute in (
+        "output_schema",
+        "response_schema",
+        "result_schema",
     ):
-        extra.update(
-            {
-                "create",
-                "maintenance",
-                "ticket",
-                "incident",
-                "machine",
-            }
+        schema = getattr(
+            tool,
+            attribute,
+            None,
         )
 
-    if not extra:
-        return query
+        if isinstance(schema, dict):
+            schema_parts: list[str] = []
+            _collect_schema_text(
+                schema,
+                schema_parts,
+            )
+            parts.append(
+                " ".join(schema_parts)
+            )
 
-    return f"{query} {' '.join(sorted(extra))}"
+    policy = getattr(
+        tool,
+        "policy",
+        None,
+    )
 
+    if policy is not None:
+        domain = getattr(
+            policy,
+            "domain",
+            "",
+        )
+
+        if domain:
+            parts.append(
+                str(domain)
+            )
+
+        keywords = getattr(
+            policy,
+            "keywords",
+            [],
+        )
+
+        if isinstance(
+            keywords,
+            (list, tuple, set),
+        ):
+            parts.extend(
+                str(item)
+                for item in keywords
+                if str(item).strip()
+            )
+
+    # Add canonical operation labels derived from the tool's own metadata.
+    raw_text = " ".join(
+        part
+        for part in parts
+        if part and str(part).strip()
+    )
+
+    operation_labels = sorted(
+        _operation_labels(raw_text)
+    )
+
+    if operation_labels:
+        parts.extend(
+            operation_labels
+        )
+
+    return " ".join(
+        str(part)
+        for part in parts
+        if part and str(part).strip()
+    )
+
+
+# ============================================================
+# GENERIC QUERY ENRICHMENT
+# ============================================================
 
 def _fuzzy_expand_query(
     query: str,
     vocabulary: set[str],
+    *,
+    cutoff: float = 0.84,
 ) -> str:
-    """
-    Correct likely user typos using the vocabulary present in tool metadata.
-
-    Example:
-        temperatue -> temperature
-
-    Only longer tokens are fuzzy matched so short machine IDs such as
-    MAC1 are not accidentally rewritten.
-    """
-    query_tokens = tokenize(query)
     additions: list[str] = []
 
-    for token in query_tokens:
+    for token in tokenize(query):
         if len(token) < 5:
+            continue
+
+        if any(
+            character.isdigit()
+            for character in token
+        ):
             continue
 
         if token in vocabulary:
@@ -376,236 +514,113 @@ def _fuzzy_expand_query(
             token,
             vocabulary,
             n=1,
-            cutoff=0.78,
+            cutoff=cutoff,
         )
 
         if matches:
-            additions.append(matches[0])
+            additions.append(
+                matches[0]
+            )
 
     if not additions:
         return query
 
-    return f"{query} {' '.join(additions)}"
+    unique_additions = list(
+        dict.fromkeys(additions)
+    )
+
+    return (
+        f"{query} "
+        + " ".join(
+            unique_additions
+        )
+    )
 
 
-def intent_adjustment(
-    query: str,
-    tool: ToolDescriptor,
+# ============================================================
+# GENERIC SCORE HELPERS
+# ============================================================
+
+def _clamp01(
+    value: float,
 ) -> float:
-    """
-    Generic deterministic reranking.
-
-    It boosts tools whose purpose matches the query and strongly penalizes
-    obviously unrelated pipeline/training/config tools for telemetry queries.
-    """
-    query_tokens = set(tokenize(query))
-    tool_text = build_tool_text(tool)
-    tool_tokens = set(tokenize(tool_text))
-
-    adjustment = 0.0
-
-    sensor_query_words = {
-        "temperature",
-        "temp",
-        "vibration",
-        "voltage",
-        "humidity",
-        "pressure",
-        "power",
-        "frequency",
-        "current",
-        "level",
-        "flow",
-        "speed",
-        "rpm",
-        "sensor",
-        "sensors",
-        "reading",
-        "readings",
-        "telemetry",
-        "measurement",
-        "measurements",
-    }
-
-    sensor_tool_words = {
-        "sensor",
-        "sensors",
-        "telemetry",
-        "reading",
-        "readings",
-        "measurement",
-        "measurements",
-        "parameter",
-        "parameters",
-        "latest",
-    }
-
-    unrelated_pipeline_words = {
-        "pipeline",
-        "training",
-        "trained",
-        "model",
-        "models",
-        "feature",
-        "config",
-        "configuration",
-        "encoder",
-    }
-
-    wants_sensor_data = bool(
-        query_tokens.intersection(sensor_query_words)
+    return min(
+        1.0,
+        max(
+            0.0,
+            float(value),
+        ),
     )
 
-    if wants_sensor_data:
-        matched_sensor_terms = len(
-            tool_tokens.intersection(sensor_tool_words)
-        )
 
-        adjustment += min(
-            0.95,
-            0.22 * matched_sensor_terms,
-        )
+def _token_overlap_score(
+    query_tokens: set[str],
+    document_tokens: set[str],
+) -> float:
+    if (
+        not query_tokens
+        or not document_tokens
+    ):
+        return 0.0
 
-        if "data" in tool_tokens:
-            adjustment += 0.10
-
-        if "machine" in tool_tokens or "machines" in tool_tokens:
-            adjustment += 0.08
-
-        if tool_tokens.intersection(unrelated_pipeline_words):
-            adjustment -= 0.95
-
-        if tool_tokens.intersection(
-            {"risk", "risky", "health", "severity"}
-        ):
-            adjustment -= 0.40
-
-    machine_words = {"machine", "machines"}
-    listing_words = {
-        "all",
-        "list",
-        "show",
-        "available",
-        "names",
-        "name",
-        "count",
-        "which",
-        "what",
-    }
-
-    wants_machine_listing = bool(
-        query_tokens.intersection(machine_words)
-        and query_tokens.intersection(listing_words)
-    )
-
-    if wants_machine_listing:
-        if tool_tokens.intersection({"machine", "machines"}):
-            adjustment += 0.30
-
-        if tool_tokens.intersection(
-            {"list", "available", "names", "name"}
-        ):
-            adjustment += 0.45
-
-        if tool_tokens.intersection(
-            {
-                "risky",
-                "risk",
-                "health",
-                "severity",
-                "anomaly",
-                "alerts",
-            }
-        ):
-            adjustment -= 0.70
-
-        if tool_tokens.intersection(unrelated_pipeline_words):
-            adjustment -= 0.55
-
-    wants_risk = bool(
+    overlap = len(
         query_tokens.intersection(
-            {
-                "risk",
-                "risky",
-                "health",
-                "severity",
-                "unhealthy",
-                "alerts",
-            }
+            document_tokens
         )
     )
 
-    if wants_risk:
-        if tool_tokens.intersection(
-            {
-                "risk",
-                "risky",
-                "health",
-                "severity",
-                "alerts",
-                "anomaly",
-            }
-        ):
-            adjustment += 0.75
+    if overlap <= 0:
+        return 0.0
 
-    wants_anomaly = bool(
-        query_tokens.intersection(
-            {
-                "anomaly",
-                "anomalies",
-                "abnormal",
-                "unusual",
-                "outlier",
-            }
+    denominator = math.sqrt(
+        len(query_tokens)
+        * len(document_tokens)
+    )
+
+    if denominator <= 0.0:
+        return 0.0
+
+    return _clamp01(
+        overlap / denominator
+    )
+
+
+def _operation_compatibility_score(
+    query: str,
+    tool_text: str,
+) -> float:
+    query_labels = _operation_labels(
+        query
+    )
+
+    if not query_labels:
+        return 0.0
+
+    tool_labels = _operation_labels(
+        tool_text
+    )
+
+    if not tool_labels:
+        return 0.0
+
+    overlap = len(
+        query_labels.intersection(
+            tool_labels
         )
     )
 
-    if wants_anomaly:
-        if tool_tokens.intersection(
-            {
-                "anomaly",
-                "anomalies",
-                "abnormal",
-                "outlier",
-                "alert",
-            }
-        ):
-            adjustment += 0.75
-
-    wants_ticket = bool(
-        query_tokens.intersection(
-            {
-                "create",
-                "raise",
-                "open",
-                "submit",
-            }
-        )
-        and query_tokens.intersection(
-            {
-                "ticket",
-                "incident",
-                "maintenance",
-            }
+    return _clamp01(
+        overlap
+        / max(
+            len(query_labels),
+            1,
         )
     )
 
-    if wants_ticket:
-        if tool_tokens.intersection(
-            {
-                "ticket",
-                "incident",
-                "maintenance",
-                "create",
-            }
-        ):
-            adjustment += 0.90
 
-    return max(
-        -1.25,
-        min(1.25, adjustment),
-    )
-
+# ============================================================
+# BM25
+# ============================================================
 
 class BM25Index:
     def __init__(
@@ -616,21 +631,31 @@ class BM25Index:
         b: float = 0.75,
     ) -> None:
         self.docs = [
-            tokenize(doc)
-            for doc in documents
+            tokenize(document)
+            for document in documents
         ]
-        self.k1 = k1
-        self.b = b
+
+        self.k1 = float(k1)
+        self.b = float(b)
+
         self.avg_length = (
-            sum(map(len, self.docs))
-            / max(len(self.docs), 1)
+            sum(
+                map(
+                    len,
+                    self.docs,
+                )
+            )
+            / max(
+                len(self.docs),
+                1,
+            )
         )
 
         self.doc_freq: Counter[str] = Counter()
 
-        for doc in self.docs:
+        for document in self.docs:
             self.doc_freq.update(
-                set(doc)
+                set(document)
             )
 
     def score(
@@ -638,64 +663,96 @@ class BM25Index:
         query: str,
         doc_index: int,
     ) -> float:
-        if not self.docs:
+        if (
+            not self.docs
+            or doc_index < 0
+            or doc_index >= len(self.docs)
+        ):
             return 0.0
 
-        query_terms = tokenize(query)
-        doc = self.docs[doc_index]
-        frequencies = Counter(doc)
+        query_terms = tokenize(
+            query
+        )
+
+        if not query_terms:
+            return 0.0
+
+        document = self.docs[
+            doc_index
+        ]
+
+        frequencies = Counter(
+            document
+        )
+
+        total_docs = len(
+            self.docs
+        )
+
         score = 0.0
-        total_docs = len(self.docs)
 
         for term in query_terms:
-            df = self.doc_freq.get(
+            document_frequency = self.doc_freq.get(
                 term,
                 0,
             )
 
-            idf = math.log(
-                1
+            inverse_document_frequency = math.log(
+                1.0
                 + (
-                    total_docs - df + 0.5
+                    total_docs
+                    - document_frequency
+                    + 0.5
                 )
-                / (df + 0.5)
+                / (
+                    document_frequency
+                    + 0.5
+                )
             )
 
-            tf = frequencies.get(
+            term_frequency = frequencies.get(
                 term,
                 0,
             )
 
             denominator = (
-                tf
+                term_frequency
                 + self.k1
                 * (
-                    1
+                    1.0
                     - self.b
                     + self.b
-                    * len(doc)
-                    / max(self.avg_length, 1)
+                    * len(document)
+                    / max(
+                        self.avg_length,
+                        1.0,
+                    )
                 )
             )
 
-            if denominator:
-                score += (
-                    idf
+            if denominator <= 0.0:
+                continue
+
+            score += (
+                inverse_document_frequency
+                * (
+                    term_frequency
                     * (
-                        tf
-                        * (self.k1 + 1)
+                        self.k1
+                        + 1.0
                     )
-                    / denominator
                 )
+                / denominator
+            )
 
         return score
 
 
-class DomainRouter:
-    """
-    Cheap first-stage routing.
-    """
+# ============================================================
+# GENERIC POLICY-DOMAIN SCORE
+# ============================================================
 
+class DomainRouter:
     def rank(
         self,
         query: str,
@@ -711,93 +768,253 @@ class DomainRouter:
         ] = defaultdict(set)
 
         for tool in tools:
-            policy = getattr(tool, "policy", None)
+            policy = getattr(
+                tool,
+                "policy",
+                None,
+            )
 
             domain = (
-                getattr(policy, "domain", "")
+                getattr(
+                    policy,
+                    "domain",
+                    "",
+                )
                 if policy is not None
                 else ""
             ) or "general"
 
             keywords = (
-                getattr(policy, "keywords", [])
+                getattr(
+                    policy,
+                    "keywords",
+                    [],
+                )
                 if policy is not None
                 else []
             )
 
-            domain_terms[domain].update(
+            domain_terms[
+                domain
+            ].update(
                 tokenize(domain)
             )
 
-            domain_terms[domain].update(
-                tokenize(
-                    " ".join(
-                        str(item)
-                        for item in keywords
+            if isinstance(
+                keywords,
+                (list, tuple, set),
+            ):
+                for keyword in keywords:
+                    domain_terms[
+                        domain
+                    ].update(
+                        tokenize(
+                            str(keyword)
+                        )
                     )
-                )
-            )
 
-        scores: dict[str, float] = {}
+        scores: dict[
+            str,
+            float,
+        ] = {}
 
-        for domain, terms in domain_terms.items():
-            if not terms:
-                scores[domain] = 0.0
-                continue
-
-            overlap = len(
-                query_tokens.intersection(terms)
-            )
-
-            scores[domain] = (
-                overlap
-                / math.sqrt(len(terms))
+        for (
+            domain,
+            terms,
+        ) in domain_terms.items():
+            scores[
+                domain
+            ] = _token_overlap_score(
+                query_tokens,
+                terms,
             )
 
         return scores
 
 
-class HybridToolRetriever:
+# ============================================================
+# PRODUCTION PGVECTOR + BM25 RETRIEVER
+# ============================================================
+
+class PgHybridToolRetriever:
+    """
+    Generic MCP tool retriever.
+
+    Important:
+    - It never requires site/zone/line/cell merely because those fields exist
+      in a tool schema.
+    - It only ranks tools here. Argument completion and hierarchy resolution
+      belong to the orchestration/context-resolution layer.
+    - No machine name, sensor name, endpoint name, or Factigent-specific
+      routing rule is hardcoded.
+    """
+
     def __init__(
         self,
-        embedding_provider: EmbeddingProvider,
+        pg_retriever: PgVectorToolRetriever,
         *,
-        lexical_weight: float = 0.55,
-        embedding_weight: float = 0.30,
-        domain_weight: float = 0.15,
-        minimum_embedding_signal: float = 0.20,
+        lexical_weight: float = 0.40,
+        embedding_weight: float = 0.35,
+        schema_weight: float = 0.08,
+        domain_weight: float = 0.02,
+        operation_weight: float = 0.15,
+        minimum_embedding_signal: float = 0.10,
+        semantic_pool_size: int = 80,
+        lexical_pool_size: int = 80,
     ) -> None:
-        self.embedding_provider = embedding_provider
-        self.lexical_weight = lexical_weight
-        self.embedding_weight = embedding_weight
-        self.domain_weight = domain_weight
-        self.minimum_embedding_signal = minimum_embedding_signal
+        self.pg_retriever = pg_retriever
 
-        self.tools: list[ToolDescriptor] = []
-        self.tool_texts: list[str] = []
-        self.tool_embeddings: list[list[float]] = []
-        self.vocabulary: set[str] = set()
+        weights = {
+            "lexical": max(
+                0.0,
+                float(
+                    lexical_weight
+                ),
+            ),
+            "embedding": max(
+                0.0,
+                float(
+                    embedding_weight
+                ),
+            ),
+            "schema": max(
+                0.0,
+                float(
+                    schema_weight
+                ),
+            ),
+            "domain": max(
+                0.0,
+                float(
+                    domain_weight
+                ),
+            ),
+            "operation": max(
+                0.0,
+                float(
+                    operation_weight
+                ),
+            ),
+        }
+
+        total_weight = sum(
+            weights.values()
+        )
+
+        if total_weight <= 0.0:
+            raise ValueError(
+                "At least one retrieval weight must be greater than zero."
+            )
+
+        self.lexical_weight = (
+            weights["lexical"]
+            / total_weight
+        )
+        self.embedding_weight = (
+            weights["embedding"]
+            / total_weight
+        )
+        self.schema_weight = (
+            weights["schema"]
+            / total_weight
+        )
+        self.domain_weight = (
+            weights["domain"]
+            / total_weight
+        )
+        self.operation_weight = (
+            weights["operation"]
+            / total_weight
+        )
+
+        self.minimum_embedding_signal = _clamp01(
+            minimum_embedding_signal
+        )
+
+        self.semantic_pool_size = max(
+            1,
+            int(
+                semantic_pool_size
+            ),
+        )
+
+        self.lexical_pool_size = max(
+            1,
+            int(
+                lexical_pool_size
+            ),
+        )
+
+        self.tools: list[
+            ToolDescriptor
+        ] = []
+
+        self.tool_texts: list[
+            str
+        ] = []
+
+        self.schema_texts: list[
+            str
+        ] = []
+
+        self.tool_token_sets: list[
+            set[str]
+        ] = []
+
+        self.schema_token_sets: list[
+            set[str]
+        ] = []
+
+        self.vocabulary: set[
+            str
+        ] = set()
+
         self.bm25 = BM25Index([])
         self.domain_router = DomainRouter()
 
-        # Useful for CLI debugging.
         self.last_expanded_query = ""
+        self.last_score_breakdown: list[
+            dict[str, Any]
+        ] = []
 
     async def rebuild(
         self,
         tools: list[ToolDescriptor],
     ) -> None:
-        self.tools = list(tools)
+        self.tools = list(
+            tools
+        )
 
         self.tool_texts = [
-            build_tool_knowledge_text(tool)
+            build_tool_text(tool)
             for tool in self.tools
+        ]
+
+        self.schema_texts = [
+            build_schema_text(tool)
+            for tool in self.tools
+        ]
+
+        self.tool_token_sets = [
+            set(
+                tokenize(text)
+            )
+            for text in self.tool_texts
+        ]
+
+        self.schema_token_sets = [
+            set(
+                tokenize(text)
+            )
+            for text in self.schema_texts
         ]
 
         self.vocabulary = {
             token
-            for text in self.tool_texts
-            for token in tokenize(text)
+            for token_set
+            in self.tool_token_sets
+            for token
+            in token_set
             if len(token) >= 3
         }
 
@@ -805,14 +1022,8 @@ class HybridToolRetriever:
             self.tool_texts
         )
 
-        if self.tool_texts:
-            self.tool_embeddings = (
-                await self.embedding_provider.embed(
-                    self.tool_texts
-                )
-            )
-        else:
-            self.tool_embeddings = []
+        self.last_expanded_query = ""
+        self.last_score_breakdown = []
 
     async def retrieve(
         self,
@@ -821,9 +1032,24 @@ class HybridToolRetriever:
         *,
         limit: int,
     ) -> list[RetrievalCandidate]:
+        if (
+            limit <= 0
+            or not self.tools
+            or not str(
+                query
+                or ""
+            ).strip()
+        ):
+            return []
+
         allowed_indices = [
             index
-            for index, tool in enumerate(self.tools)
+            for (
+                index,
+                tool,
+            ) in enumerate(
+                self.tools
+            )
             if AccessPolicy.is_allowed(
                 user,
                 tool,
@@ -833,40 +1059,103 @@ class HybridToolRetriever:
         if not allowed_indices:
             return []
 
-        # 1. Fix likely typos using tool vocabulary.
-        expanded_query = _fuzzy_expand_query(
-            query,
-            self.vocabulary | _DOMAIN_VOCAB,
+        allowed_index_set = set(
+            allowed_indices
         )
 
-        # 2. Add generic industrial synonyms.
-        expanded_query = _expand_by_intent(
-            expanded_query
+        # Retrieval-only language enrichment.
+        expanded_query = _expand_operation_language(
+            str(query)
+        )
+
+        expanded_query = _fuzzy_expand_query(
+            expanded_query,
+            self.vocabulary,
         )
 
         self.last_expanded_query = expanded_query
 
-        query_vectors = (
-            await self.embedding_provider.embed(
-                [expanded_query]
+        query_tokens = set(
+            tokenize(
+                expanded_query
             )
         )
 
-        if not query_vectors:
-            return []
-
-        query_embedding = query_vectors[0]
-
-        allowed_tools = [
-            self.tools[index]
-            for index in allowed_indices
-        ]
-
-        domain_scores = self.domain_router.rank(
-            expanded_query,
-            allowed_tools,
+        # Semantic recall from pgvector.
+        semantic_results = await self.pg_retriever.retrieve(
+            query=expanded_query,
+            limit=max(
+                self.semantic_pool_size,
+                limit,
+            ),
+            read_only_only=False,
         )
 
+        tool_name_to_index = {
+            tool.name: index
+            for (
+                index,
+                tool,
+            ) in enumerate(
+                self.tools
+            )
+        }
+
+        semantic_scores: dict[
+            str,
+            float,
+        ] = {}
+
+        semantic_indices: set[
+            int
+        ] = set()
+
+        for result in semantic_results:
+            tool_name = getattr(
+                result,
+                "tool_name",
+                None,
+            )
+
+            if not tool_name:
+                continue
+
+            index = tool_name_to_index.get(
+                tool_name
+            )
+
+            if (
+                index is None
+                or index
+                not in allowed_index_set
+            ):
+                continue
+
+            similarity = _clamp01(
+                getattr(
+                    result,
+                    "similarity",
+                    0.0,
+                )
+            )
+
+            previous = semantic_scores.get(
+                tool_name,
+                0.0,
+            )
+
+            if similarity > previous:
+                semantic_scores[
+                    tool_name
+                ] = similarity
+
+            semantic_indices.add(
+                index
+            )
+
+        # Lexical scoring is cheap, so calculate it for every authorized live
+        # tool. This prevents a valid exact tool from disappearing just because
+        # the vector pool or a small lexical pool omitted it.
         lexical_raw = {
             index: self.bm25.score(
                 expanded_query,
@@ -880,69 +1169,140 @@ class HybridToolRetriever:
             default=0.0,
         )
 
-        if max_lexical <= 0.0:
-            max_lexical = 1.0
+        lexical_denominator = (
+            max_lexical
+            if max_lexical > 0.0
+            else 1.0
+        )
+
+        lexical_indices = [
+            index
+            for index in sorted(
+                allowed_indices,
+                key=lambda item: lexical_raw.get(
+                    item,
+                    0.0,
+                ),
+                reverse=True,
+            )
+            if lexical_raw.get(
+                index,
+                0.0,
+            ) > 0.0
+        ][
+            : self.lexical_pool_size
+        ]
+
+        # Always consider authorized live tools that have lexical, semantic,
+        # schema, or operation evidence. We initially include all allowed
+        # indices and apply the signal gate below.
+        candidate_indices = (
+            set(allowed_indices)
+            | semantic_indices
+            | set(
+                lexical_indices
+            )
+        )
+
+        candidate_tools = [
+            self.tools[index]
+            for index
+            in candidate_indices
+        ]
+
+        domain_scores = self.domain_router.rank(
+            expanded_query,
+            candidate_tools,
+        )
 
         candidates: list[
             RetrievalCandidate
         ] = []
 
-        for index in allowed_indices:
-            tool = self.tools[index]
+        breakdown_rows: list[
+            dict[str, Any]
+        ] = []
 
-            lexical = (
-                lexical_raw[index]
-                / max_lexical
+        for index in candidate_indices:
+            tool = self.tools[
+                index
+            ]
+
+            lexical = _clamp01(
+                lexical_raw.get(
+                    index,
+                    0.0,
+                )
+                / lexical_denominator
             )
 
-            embedding = max(
-                0.0,
-                cosine_similarity(
-                    query_embedding,
-                    self.tool_embeddings[index],
-                ),
+            embedding = _clamp01(
+                semantic_scores.get(
+                    tool.name,
+                    0.0,
+                )
             )
 
-            policy = getattr(tool, "policy", None)
+            schema = _token_overlap_score(
+                query_tokens,
+                self.schema_token_sets[
+                    index
+                ],
+            )
+
+            operation = _operation_compatibility_score(
+                expanded_query,
+                self.tool_texts[
+                    index
+                ],
+            )
+
+            policy = getattr(
+                tool,
+                "policy",
+                None,
+            )
+
             domain_name = (
-                getattr(policy, "domain", "")
+                getattr(
+                    policy,
+                    "domain",
+                    "",
+                )
                 if policy is not None
                 else ""
             ) or "general"
 
-            domain = domain_scores.get(
-                domain_name,
-                0.0,
+            domain = _clamp01(
+                domain_scores.get(
+                    domain_name,
+                    0.0,
+                )
             )
 
-            domain = min(
-                1.0,
-                max(0.0, domain),
-            )
-
-            adjustment = intent_adjustment(
-                expanded_query,
-                tool,
-            )
-
-            # Important safety/relevance gate:
-            # Do not call a random API just because a hash embedding
-            # produced a tiny accidental similarity such as 0.09.
             has_real_signal = (
                 lexical > 0.0
+                or schema > 0.0
+                or operation > 0.0
                 or domain > 0.0
-                or adjustment > 0.0
-                or embedding >= self.minimum_embedding_signal
+                or embedding
+                >= self.minimum_embedding_signal
             )
 
             if not has_real_signal:
                 continue
 
             score = (
-                self.lexical_weight * lexical
-                + self.embedding_weight * embedding
-                + self.domain_weight * domain
-                + adjustment
+                self.lexical_weight
+                * lexical
+                + self.embedding_weight
+                * embedding
+                + self.schema_weight
+                * schema
+                + self.domain_weight
+                * domain
+                + self.operation_weight
+                * operation
             )
 
             candidates.append(
@@ -955,9 +1315,44 @@ class HybridToolRetriever:
                 )
             )
 
+            breakdown_rows.append(
+                {
+                    "tool": tool.name,
+                    "score": score,
+                    "lexical": lexical,
+                    "pgvector": embedding,
+                    "schema": schema,
+                    "domain": domain,
+                    "operation": operation,
+                }
+            )
+
         candidates.sort(
-            key=lambda item: item.score,
-            reverse=True,
+            key=lambda item: (
+                -item.score,
+                item.tool.name,
+            )
         )
 
-        return candidates[:limit]
+        breakdown_rows.sort(
+            key=lambda row: (
+                -float(
+                    row.get(
+                        "score",
+                        0.0,
+                    )
+                ),
+                str(
+                    row.get(
+                        "tool",
+                        "",
+                    )
+                ),
+            )
+        )
+
+        self.last_score_breakdown = breakdown_rows
+
+        return candidates[
+            :limit
+        ]

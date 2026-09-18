@@ -1,0 +1,140 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Factigent Platform Context API",
+    "version": "1.0.0",
+    "description": "Read-only machine context discovery API used by the chatbot to resolve machine hierarchy from site, zone, line, cell, machine name, or machine ID."
+  },
+  "paths": {
+    "/context/machine": {
+      "get": {
+        "operationId": "get_machine_context",
+        "summary": "Get machine context",
+        "description": "Return machine context filtered by any known hierarchy fields. Supply only values explicitly known from the user question or validated conversation/API context; do not invent missing site, zone, line, cell, machine name, or machine ID values.",
+        "parameters": [
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "description": "Site name, for example Indore.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "zone",
+            "in": "query",
+            "required": false,
+            "description": "Zone identifier or name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "line",
+            "in": "query",
+            "required": false,
+            "description": "Line identifier or name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cell",
+            "in": "query",
+            "required": false,
+            "description": "Cell identifier or name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "machineName",
+            "in": "query",
+            "required": false,
+            "description": "Machine name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "machineId",
+            "in": "query",
+            "required": false,
+            "description": "Machine identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sourceType",
+            "in": "query",
+            "required": false,
+            "description": "Optional machine source type when known.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sourceName",
+            "in": "query",
+            "required": false,
+            "description": "Optional machine source name when known.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sourceId",
+            "in": "query",
+            "required": false,
+            "description": "Optional machine source identifier when known.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-USER-SCOPE-CONTEXT",
+            "in": "header",
+            "required": false,
+            "description": "Trusted user scope JSON supplied by the application runtime. The LLM must not invent this value.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-USER-ROLES",
+            "in": "header",
+            "required": false,
+            "description": "Trusted authenticated user role supplied by the application runtime. The LLM must not invent this value.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Machine context response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    }
+  }
+}

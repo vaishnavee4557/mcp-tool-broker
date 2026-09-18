@@ -24,10 +24,23 @@ from mcp_broker.result_projector import ResultProjector
 from mcp_broker.retrieval import HybridToolRetriever
 from mcp_broker.token_budget import TokenBudgeter, estimate_tokens
 
+
 logger = logging.getLogger(__name__)
 
 
 class ToolBrokerOrchestrator:
+    """
+    Single-pass tool orchestration.
+
+    Every request performs exactly:
+    1. One retrieval
+    2. One LLM tool decision
+    3. At most one MCP tool call
+    4. One final-answer generation
+
+    There is deliberately no retry or multi-step tool loop in this class.
+    """
+
     def __init__(
         self,
         *,
@@ -44,30 +57,55 @@ class ToolBrokerOrchestrator:
         self.registry = registry
         self.retriever = retriever
         self.gateway = gateway
-        self.models = model
+
+        # Important: handle() uses self.model. The previous code assigned
+        # self.models, which is a different attribute and causes a failure.
+        self.model = model
+
         self.memory = memory
         self.budgeter = budgeter
         self.projector = projector
-        self.max_candidates = max_candidates
+        self.max_candidates = max(1, max_candidates)
         self.max_output_tokens = max_output_tokens
 
-    async def handle(self, request: ChatRequest, user: UserContext) -> ChatResponse:
+    async def handle(
+        self,
+        request: ChatRequest,
+        user: UserContext,
+    ) -> ChatResponse:
         started = time.perf_counter()
         request_id = uuid.uuid4().hex
 
         full_history = await self.memory.get(request.session_id)
-        history, history_tokens = self.budgeter.select_history(full_history, request.query)
+        history, history_tokens = self.budgeter.select_history(
+            full_history,
+            request.query,
+        )
 
+        # SINGLE RETRIEVAL: do not place this call inside a step/retry loop.
         candidates = await self.retriever.retrieve(
             request.query,
             user,
             limit=self.max_candidates,
         )
-        selected_tools, schema_tokens = self.budgeter.select_tools(candidates)
+        selected_tools, schema_tokens = self.budgeter.select_tools(
+            candidates
+        )
+
+        logger.info(
+            "retrieval_completed request_id=%s candidates=%s selected=%s",
+            request_id,
+            len(candidates),
+            len(selected_tools),
+        )
 
         if not selected_tools:
             answer = "No authorized tool is available for this request."
-            await self._save(request.session_id, request.query, answer)
+            await self._save(
+                request.session_id,
+                request.query,
+                answer,
+            )
             return self._response(
                 request_id=request_id,
                 answer=answer,
@@ -78,6 +116,7 @@ class ToolBrokerOrchestrator:
                 started=started,
             )
 
+        # SINGLE DECISION: the model may answer directly or select one tool.
         decision = await self.model.choose_tool(
             query=request.query,
             history=history,
@@ -85,10 +124,15 @@ class ToolBrokerOrchestrator:
         )
 
         if decision.direct_answer and not decision.tool_name:
-            await self._save(request.session_id, request.query, decision.direct_answer)
+            answer = decision.direct_answer
+            await self._save(
+                request.session_id,
+                request.query,
+                answer,
+            )
             return self._response(
                 request_id=request_id,
-                answer=decision.direct_answer,
+                answer=answer,
                 candidates=candidates,
                 history_tokens=history_tokens,
                 schema_tokens=schema_tokens,
@@ -96,16 +140,40 @@ class ToolBrokerOrchestrator:
                 started=started,
             )
 
-        descriptor = self.registry.get_by_llm_name(decision.tool_name or "")
-        visible_names = {tool.llm_name for tool in selected_tools}
-        if descriptor is None or descriptor.llm_name not in visible_names:
-            raise RuntimeError("Model attempted to call a tool outside the authorized candidate set")
+        if not decision.tool_name:
+            raise RuntimeError(
+                "Model returned neither a direct answer nor a tool name"
+            )
 
-        self._validate_arguments(descriptor.input_schema, decision.arguments)
-        raw_result = await self.gateway.call_tool(descriptor, decision.arguments)
+        descriptor = self.registry.get_by_llm_name(
+            decision.tool_name
+        )
+        visible_names = {
+            tool.llm_name
+            for tool in selected_tools
+        }
+
+        if (
+            descriptor is None
+            or descriptor.llm_name not in visible_names
+        ):
+            raise RuntimeError(
+                "Model attempted to call a tool outside the authorized "
+                "candidate set"
+            )
+
+        arguments = decision.arguments or {}
+        self._validate_arguments(
+            descriptor.input_schema,
+            arguments,
+        )
+
+        # SINGLE MCP CALL: this request cannot call a second tool.
+        raw_result = await self.gateway.call_tool(descriptor,arguments,)
         projected_result = self.projector.project(raw_result)
         result_tokens = estimate_tokens(projected_result)
 
+        # SINGLE FINAL ANSWER.
         answer = await self.model.answer(
             query=request.query,
             history=history,
@@ -113,13 +181,20 @@ class ToolBrokerOrchestrator:
             tool_result=projected_result,
             max_output_tokens=self.max_output_tokens,
         )
-        await self._save(request.session_id, request.query, answer)
+
+        await self._save(
+            request.session_id,
+            request.query,
+            answer,
+        )
 
         logger.info(
-            "request_completed tool=%s candidates=%s",
+            "request_completed request_id=%s tool=%s candidates=%s",
+            request_id,
             descriptor.registry_id,
             len(selected_tools),
         )
+
         return self._response(
             request_id=request_id,
             answer=answer,
@@ -133,13 +208,25 @@ class ToolBrokerOrchestrator:
         )
 
     @staticmethod
-    def _validate_arguments(schema: dict[str, Any], arguments: dict[str, Any]) -> None:
+    def _validate_arguments(
+        schema: dict[str, Any],
+        arguments: dict[str, Any],
+    ) -> None:
         try:
-            Draft202012Validator(schema or {"type": "object"}).validate(arguments)
+            Draft202012Validator(
+                schema or {"type": "object"}
+            ).validate(arguments)
         except ValidationError as exc:
-            raise ValueError(f"Invalid tool arguments: {exc.message}") from exc
+            raise ValueError(
+                f"Invalid tool arguments: {exc.message}"
+            ) from exc
 
-    async def _save(self, session_id: str, query: str, answer: str) -> None:
+    async def _save(
+        self,
+        session_id: str,
+        query: str,
+        answer: str,
+    ) -> None:
         await self.memory.append(
             session_id,
             ChatTurn(role="user", content=query),
@@ -177,5 +264,8 @@ class ToolBrokerOrchestrator:
                 estimated_tool_schema_tokens=schema_tokens,
                 estimated_tool_result_tokens=result_tokens,
             ),
-            latency_ms=round((time.perf_counter() - started) * 1000, 2),
+            latency_ms=round(
+                (time.perf_counter() - started) * 1000,
+                2,
+            ),
         )
