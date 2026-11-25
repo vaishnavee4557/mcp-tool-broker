@@ -20,17 +20,6 @@ IGNORED_TOOL_WORDS = {
     "response",
 }
 
-
-# ============================================================
-# 2. MANUAL KNOWLEDGE OVERRIDES
-#
-# We only need to manually define tools whose OpenAPI names or
-# descriptions are unclear.
-#
-# All other MCP tools will still get automatically generated
-# knowledge.
-# ============================================================
-
 TOOL_KNOWLEDGE_OVERRIDES: dict[str, dict[str, Any]] = {
 
     # --------------------------------------------------------
@@ -106,27 +95,10 @@ TOOL_KNOWLEDGE_OVERRIDES: dict[str, dict[str, Any]] = {
 },
 
 }
-# ============================================================
-# 3. CLEAN GENERATED MCP TOOL NAMES
-#
-# Example:
-#
-# machine_parameters_api_pipeline_machine_parameters_get
-#
-# becomes roughly:
-#
-# machine parameters pipeline machine parameters
-# ============================================================
 
 def clean_tool_name(name: str) -> str:
     """
     Convert a generated MCP/OpenAPI tool name into more readable text.
-
-    Example:
-        machine_parameters_api_pipeline_machine_parameters_get
-
-    becomes:
-        machine parameters pipeline machine parameters
     """
 
     if not name:
@@ -266,7 +238,6 @@ def get_tool_input_schema(tool: Any) -> dict[str, Any]:
 
 # ============================================================
 # 6. CREATE KNOWLEDGE FOR ONE MCP TOOL
-#
 # This is the main function.
 #
 # Every tool gets:
@@ -275,9 +246,7 @@ def get_tool_input_schema(tool: Any) -> dict[str, Any]:
 # - friendly name
 # - purpose
 # - original description
-# - keywords
-# - examples
-# - input schema
+# - keywords examples input schema
 #
 # If manual knowledge exists, it overrides automatically generated
 # knowledge.
@@ -286,14 +255,6 @@ def get_tool_input_schema(tool: Any) -> dict[str, Any]:
 def create_tool_knowledge(
     tool: Any,
 ) -> dict[str, Any]:
-    """
-    Create retrieval knowledge for one MCP tool.
-
-    Manual overrides are used when available.
-
-    Otherwise the knowledge is generated automatically from
-    the MCP/OpenAPI tool metadata.
-    """
 
     tool_name = get_tool_name(tool)
 
@@ -373,11 +334,6 @@ def create_tool_knowledge(
 
 # ============================================================
 # 7. CREATE KNOWLEDGE FOR ALL MCP TOOLS
-#
-# If MCP discovers 33 tools, this creates knowledge for all 33.
-#
-# If tomorrow Swagger has 40 tools, it automatically creates
-# knowledge for all 40.
 # ============================================================
 
 def create_all_tool_knowledge(

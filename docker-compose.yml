@@ -1,11 +1,7 @@
 services:
-
   postgres:
-
     image: pgvector/pgvector:pg17
-
     container_name: factigent_pgvector
-
     restart: unless-stopped
 
     environment:
@@ -29,6 +25,5 @@ services:
       timeout: 5s
       retries: 10
 
-
 volumes:
-  factigent_pgdata:docker ps --filter "name=factigent_pgvector"
+  factigent_pgdata:

@@ -119,7 +119,7 @@ LLM final answer
 
 #         properties = tool.input_schema.get(
 #             "properties",
-#             {},
+#             {},docker start factigent_pgvector
 #         )
 
 #         # Extract machine ID such as MAC1 or MAC2.
@@ -184,17 +184,19 @@ LLM final answer
 
 """
 # cd C:\Users\vaish\Downloads\mcp_tool_broker
-# .\.venv\Scripts\Activate.ps1
+# python -m mcp_broker.cli
 # $env:PYTHONPATH = (Resolve-Path .\src).Path
 # python -m mcp_broker.mcp_server
 # for cli 
 # cd C:\Users\vaish\Downloads\mcp_tool_broker
 # .\.venv\Scripts\Activate.ps
-# $env:PYTHONPATH = (Resolve-Path .\src).Path
+# cd C:\Users\vaish\Downloads\mcp_tool_broker
+#$env:PYTHONPATH = "$PWD\src"
+
 # python -m mcp_broker.cli
 #  for pg vector db
 # Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-# docker start factigent_pgvector
+# 
 # docker ps --filter "name=factigent_pgvector"
 # docker info
 #   Test-NetConnection 127.0.0.1 -Port 5433     
@@ -203,12 +205,6 @@ LLM final answer
 #$env:PYTHONPATH=(Resolve-Path .\src).Path
 #$env:OPENAPI_SOURCE_NAME="ums"
 #$env:MCP_HOST="127.0.0.1"
-#$env:MCP_PORT="8003"
-#python -m mcp_broker.mcp_server     
-    # cd C:\Users\vaish\Downloads\mcp_tool_broker
-# .\.venv\Scripts\Activate.ps1
-# $env:PYTHONPATH=(Resolve-Path .\src).Path
-# $env:OPENAPI_SOURCE_NAME="play"
 # $env:MCP_HOST="127.0.0.1"
 # $env:MCP_PORT="8002"
 # python -m mcp_broker.mcp_server
@@ -217,7 +213,7 @@ LLM final answer
     # cd C:\Users\vaish\Downloads\mcp_tool_broker
 #docker ps --format "table {{.Names}}\t{{.Status}}"
     # docker exec -it factigent_pgvector psql -U factigent_app -d factigent_chatbot
-#     SELECT
+#     SELESELECTCT
 #     COUNT(*) AS total_tools,
 #     COUNT(embedding) AS embedded_tools,
 #     COUNT(*) - COUNT(embedding) AS tools_without_embedding
@@ -233,3 +229,168 @@ LLM final answer
 # WHERE embedding IS NOT NULL
 # ORDER BY server_name, tool_name
 # LIMIT 3;
+# b66a86e2-0502-4d2b-8753-9d1bb1056fa1
+#  
+#     id,
+#    role,
+#    content,
+#   created_at
+#  FROM public.conversation_messages
+#  WHERE conversation_id =
+#    'b66a86e2-0502-4d2b-8753-9d1bb1056fa1'
+# ORDER BY id ASC
+# SELECT
+#     id,
+#     role,
+#     content,
+#     created_at
+# FROM public.conversation_messages
+# WHERE conversation_id =
+#     'f5861d02-1c4f-492f-99c9-1355f302f101'
+# ORDER BY id ASC;
+# SELECT 
+#     id,
+#     role,
+#     content,
+#     created_at,
+# FROM Public.conversation_messages
+# WHERE coversation_id = ''
+# ORDER BY id ASC;
+# \pset pager off
+# \x off
+# \pset format aligned
+# docker stop factigent_pgvector
+# docker rm factigent_pgvector
+"""
+
+
+ docker run -d `
+ --name factigent_pgvector `
+ -e POSTGRES_USER=factigent_app `
+  -e POSTGRES_PASSWORD=factigent_dev_password `
+  -e POSTGRES_DB=factigent_chatbot `
+  -p 5433:5432 `
+  -v mcp_tool_broker_factigent_pgdata:/var/lib/postgresql/data `
+  pgvector/pgvector:pg17
+  """
+   
+#    docker ps
+   
+#    Test-NetConnection 127.0.0.1 -Port 5433
+
+"""
+ USER QUESTION
+                           │
+                           ▼
+                 INPUT GUARDRAILS
+                           │
+      ┌────────────────────┼────────────────────┐
+      │                    │                    │
+   toxic?             jailbreak?            PII?
+      │                    │                    │
+      └──────────────┬─────┴──────────────┬────┘
+                     │                    │
+                 off-topic?             secret?
+                     │                    │
+                     └─────────┬──────────┘
+                               │
+                       PASS    │    FAIL
+                         │     │      │
+                         │     │      └──> BLOCK
+                         ▼
+                    normalize query
+                         │
+                         ▼
+                  save user message
+                         │
+                         ▼
+                 HYBRID RETRIEVER
+                         │
+            BM25 + embeddings + ranking
+                         │
+                         ▼
+                   Top-K tools
+                         │
+                         ▼
+                    LLM CALL #1
+                         │
+                choose tool + args
+                         │
+                         ▼
+                 candidate verification
+                         │
+                         ▼
+                validate_arguments()
+                         │
+                         ▼
+         apply_required_schema_defaults()
+                         │
+                         ▼
+          canonicalize_schema_values()
+                         │
+                         ▼
+          resolve_required_from_context()
+                         │
+           ┌─────────────┴──────────────┐
+           │                            │
+       all known                  missing field
+           │                            │
+           ▼                            ▼
+       MCP CALL                 another discovery
+           │                       tool step
+           ▼                            │
+     backend REST API                   │
+           │                            │
+           ▼                            │
+    validate response                   │
+           │                            │
+           ▼                            │
+ update_validated_context() ◄───────────┘
+           │
+           ▼
+      compact result
+           │
+           ▼
+  need another MCP tool?
+       │          │
+      YES         NO
+       │          │
+       └── loop   ▼
+               LLM CALL #2
+                    │
+              final answer
+                    │
+                    ▼
+             OUTPUT GUARDRAILS
+                    │
+       PII / secrets / internal data
+                    │
+            ┌───────┴────────┐
+            │                │
+           PASS            BLOCK
+            │                │
+            ▼                ▼
+      save safe answer   safe error msg
+            │
+            ▼
+           USER 
+
+
+ SELECT
+    id,
+    role,
+    LEFT(
+      REGEXP_REPLACE(
+         content,
+          E'[\\n\\r]+',
+            ' ',
+            'g'
+        ),
+       100
+    ) AS content_preview,
+    created_at
+ FROM public.conversation_messages
+ WHERE conversation_id =
+     'f5861d02-1c4f-492f-99c9-1355f302f101'
+ ORDER BY id ASC;
+ """

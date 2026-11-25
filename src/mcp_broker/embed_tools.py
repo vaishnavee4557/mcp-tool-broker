@@ -327,17 +327,42 @@ async def main() -> None:
                 rows = (
                     await cur.fetchall()
                 )
+    #         print("\n========== TOP TOOL EMBEDDING MATCHES ==========")
+    #         print(f"User question: {query}")
+    #         print(f"Embedding model: {self.embedding_model}")
+    #         print(f"Question vector dimensions: {len(query_vector)}")
+    #         print(f"Question embedding preview: {query_vector[:10].tolist()}")
 
-            print(
-                "Tools requiring embeddings:",
-                len(rows),
-            )
+    #         for rank, row in enumerate(rows, start=1):
+    #         server_name = row[0]
+    #         tool_name = row[1]
+    #         similarity = float(row[5] or 0.0)
+    #         tool_embedding = np.asarray(
+    #         row[7],
+    #         dtype=np.float32,
+    # )
 
-            if not rows:
-                print(
-                    "All tool embeddings are already up to date."
-                )
-                return
+    #         print(f"\nRank: {rank}")
+    #         print(f"Server: {server_name}")
+    #         print(f"Tool: {tool_name}")
+    #         print(f"Vector score: {similarity:.4f}")
+    #         print(f"Tool embedding dimensions: {len(tool_embedding)}")
+    #         print(
+    #     "Tool embedding preview:",
+    #     tool_embedding[:10].tolist(),
+    # )
+
+    #         print("\n================================================\n")
+    #         print(
+    #             "Tools requiring embeddings:",
+    #             len(rows),
+    #         )
+
+    #         if not rows:
+    #             print(
+    #                 "All tool embeddings are already up to date."
+    #             )
+    #             return
 
             # ------------------------------------------------
             # 4. VALIDATE SEARCHABLE TEXT
@@ -370,20 +395,7 @@ async def main() -> None:
                 ).strip()
                 for row in rows
             ]
-
-            # ------------------------------------------------
-            # 5. GENERATE TOOL EMBEDDINGS
-            # ------------------------------------------------
-
-            vectors = await provider.embed(
-                texts
-            )
-
-            if len(vectors) != len(rows):
-                raise RuntimeError(
-                    "Embedding count does not match tool count. "
-                    f"tools={len(rows)}, vectors={len(vectors)}"
-                )
+            
 
             # ------------------------------------------------
             # 6. VALIDATE ALL VECTORS BEFORE WRITING ANYTHING
@@ -401,6 +413,7 @@ async def main() -> None:
             for row, vector in zip(
                 rows,
                 vectors,
+                strict=True
             ):
                 (
                     tool_id,

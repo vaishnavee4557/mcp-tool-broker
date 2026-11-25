@@ -188,6 +188,14 @@ class ChatModel(Protocol):
         max_output_tokens: int,
     ) -> str:
         ...
+    async def check_domain(
+        self,
+        *,
+        query: str,
+        tools: list[ToolDescriptor],
+    )-> bool:
+        ...
+    
 
 
 # ============================================================
@@ -245,6 +253,84 @@ class OpenAICompatibleChatModel:
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
+        )
+    async def check_domain(self, *, query: str, tools: list[ToolDescriptor]) -> bool:
+        """
+        Check if the user's query is within the domain of the available tools.
+        Returns True if at least one tool can meaningfully answer the query,
+        otherwise returns False.
+        """
+        if not query.strip():
+            return False
+        if not tools:
+            return False
+        tool_descriptors: list[str] = []
+        for tool in tools:
+            tool_descriptors.append(
+                "\n".join(
+                    [
+                        f"Tool: {tool.llm_name}",
+                        f"Description: {tool.description or ''}",
+                        f"Input schema: {tool.input_schema or {}}",]
+                )
+            )
+        tool_text = "\n\n".join(tool_descriptors)
+        prompt = f"""You are a strict domain gate for an API-only enterprise chatbot.
+
+The chatbot may answer ONLY questions that can be answered using
+one or more of the supplied MCP/API tools.
+USER QUESTION:
+{query}
+AVAILABLE AUTHORIZED TOOLS:
+{tool_text}
+Rules:Rules:
+1. Return YES only if at least one supplied tool can meaningfully
+   answer the user's request.
+2. Return NO for unrelated general knowledge.
+3. Do not approve a question only because it shares words with a tool.
+4. Use the tool descriptions and input schemas to judge capability.
+5. Do not invent API capabilities.
+6. Locations, zones, lines, machines, IDs, parameters, and similar
+   values may come from the user question.
+7. If no tool can support the request, return NO.
+
+Return exactly one word:
+
+YES
+
+or
+
+NO
+
+
+""" .strip()
+        response = await self._generate_text(
+            prompt=prompt,
+            max_output_tokens=16,
+        )
+        answer = str(response or "").strip().upper()
+        return answer == "YES"
+
+    async def _chat(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        max_output_tokens: int = 200,
+    ) -> str:
+        if not messages:
+            raise RuntimeError("Chat request must include at least one message.")
+
+        last_message = messages[-1]
+        if not isinstance(last_message, dict):
+            raise RuntimeError("Chat request message must be a dictionary.")
+
+        prompt = str(last_message.get("content") or "").strip()
+        if not prompt:
+            raise RuntimeError("Chat request had no textual content.")
+
+        return await self._generate_text(
+            prompt=prompt,
+            max_output_tokens=max_output_tokens,
         )
 
     async def close(self) -> None:

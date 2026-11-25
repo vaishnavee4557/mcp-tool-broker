@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastmcp import Client  # type: ignore[import]
+from fastmcp import Client  
 
 from mcp_broker.models import ToolDescriptor
 

@@ -17,28 +17,63 @@ class InMemoryConversationStore:
         self._turns: dict[str, list[ChatTurn]] = defaultdict(list)
         self._updated_at: dict[str, float] = {}
         self._lock = asyncio.Lock()
-
-    async def get(self, session_id: str) -> list[ChatTurn]:
+    def _make_key(self, user_id: str , session_id:str,) -> tuple[str ,str]:
+        return (user_id, session_id)
+    
+    async def get(self,user_id: str, session_id: str) -> list[ChatTurn]:
         async with self._lock:
             self._evict_expired()
-            return list(self._turns.get(session_id, []))
+            key = self._make_key(user_id, session_id)
+            return list(self._turns.get(key, [],))
 
-    async def append(self, session_id: str, *turns: ChatTurn) -> None:
+    async def append(self, user_id: str, session_id: str, *turns: ChatTurn) -> None:
         async with self._lock:
             self._evict_expired()
-            values = self._turns[session_id]
+            key = self._make_key(user_id, session_id)
+            values = self._turns[key]
             values.extend(turns)
-            self._turns[session_id] = values[-self.max_turns :]
-            self._updated_at[session_id] = time.monotonic()
+            self._turns[key] = values[-self.max_turns :]
+            self._updated_at[key] = time.monotonic()
+    async def delete(self , user_id: str, session_id: str) -> bool:
+        async with self._lock:
+            self._evict_expired()
+            key = self._make_key(user_id, session_id)
+            existed = key in self._turns
+            self._turns.pop(key, None)
+            self._updated_at.pop(key, None)
+            return existed
+    async def list_sessions(self, user_id: str) -> list[str]:
+        async with self._lock:
+            self._evict_expired()
+            sessions = [
+                session_id
+                for (stored_user_id , session_id) in self._turns.keys()
+                if stored_user_id == user_id
+            
+            return sessions 
+            ]
     # to delete expired sessions from the store
     def _evict_expired(self) -> None:
+
         now = time.monotonic()
+
         expired = [
-            session_id
-            for session_id, updated in self._updated_at.items()
-            if now - updated > self.ttl_seconds
+            key
+            for key, updated
+            in self._updated_at.items()
+            if (
+                now - updated
+                > self.ttl_seconds
+            )
         ]
-        for session_id in expired:
-            self._turns.pop(session_id, None)
-            self._updated_at.pop(session_id, None)
-    
+
+        for key in expired:
+            self._turns.pop(
+                key,
+                None,
+            )
+
+            self._updated_at.pop(
+                key,
+                None,
+            )

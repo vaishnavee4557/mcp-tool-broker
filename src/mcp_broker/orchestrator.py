@@ -22,7 +22,10 @@ from mcp_broker.models import (
 from mcp_broker.registry import ToolRegistry
 from mcp_broker.result_projector import ResultProjector
 from mcp_broker.retrieval import HybridToolRetriever
-from mcp_broker.token_budget import TokenBudgeter, estimate_tokens
+from mcp_broker.token_budget import (
+    TokenBudgeter,
+    estimate_tokens,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -30,15 +33,40 @@ logger = logging.getLogger(__name__)
 
 class ToolBrokerOrchestrator:
     """
-    Single-pass tool orchestration.
+    Handles the complete chatbot request flow.
 
-    Every request performs exactly:
-    1. One retrieval
-    2. One LLM tool decision
-    3. At most one MCP tool call
-    4. One final-answer generation
+    Flow:
 
-    There is deliberately no retry or multi-step tool loop in this class.
+        User request
+            ↓
+        Load user's conversation history
+            ↓
+        Select allowed conversation history
+            ↓
+        Retrieve relevant MCP tools
+            ↓
+        Apply token budget
+            ↓
+        Ask LLM which tool to use
+            ↓
+        Validate tool arguments
+            ↓
+        Call MCP tool
+            ↓
+        Project / limit MCP response
+            ↓
+        Generate final LLM answer
+            ↓
+        Save conversation for this user
+            ↓
+        Return response
+
+    Conversation history is isolated using:
+
+        user_id + session_id
+
+    Therefore, one user's conversation cannot be loaded
+    through another user's session.
     """
 
     def __init__(
@@ -54,18 +82,36 @@ class ToolBrokerOrchestrator:
         max_candidates: int,
         max_output_tokens: int,
     ) -> None:
+
+        # MCP tool registry.
         self.registry = registry
+
+        # Finds the most relevant tools for a user question.
         self.retriever = retriever
+
+        # Actually communicates with the MCP server.
         self.gateway = gateway
 
-        # Important: handle() uses self.model. The previous code assigned
-        # self.models, which is a different attribute and causes a failure.
+        # LLM used for tool selection and final answer generation.
         self.model = model
 
+        # Stores conversation history.
         self.memory = memory
+
+        # Prevents too much conversation/tool information
+        # from being sent to the LLM.
         self.budgeter = budgeter
+
+        # Reduces / sanitizes MCP tool output before
+        # giving it to the LLM.
         self.projector = projector
-        self.max_candidates = max(1, max_candidates)
+
+        # Maximum number of tool candidates exposed to the LLM.
+        self.max_candidates = max(
+            1,
+            max_candidates,
+        )
+
         self.max_output_tokens = max_output_tokens
 
     async def handle(
@@ -73,39 +119,101 @@ class ToolBrokerOrchestrator:
         request: ChatRequest,
         user: UserContext,
     ) -> ChatResponse:
+        """
+        Main entry point for every chat request.
+
+        request contains:
+            session_id
+            query
+
+        user contains:
+            user_id
+            roles / permissions
+
+        Both user_id and session_id are used to isolate
+        conversation history.
+        """
+
         started = time.perf_counter()
+
+        # Unique identifier for this individual API request.
         request_id = uuid.uuid4().hex
 
-        full_history = await self.memory.get(request.session_id)
-        history, history_tokens = self.budgeter.select_history(
-            full_history,
-            request.query,
+        # ====================================================
+        # 1. LOAD USER-SPECIFIC CONVERSATION HISTORY
+        # ====================================================
+
+        full_history = await self.memory.get(
+            user.user_id,
+            request.session_id,
         )
 
-        # SINGLE RETRIEVAL: do not place this call inside a step/retry loop.
+        # We don't necessarily send the entire conversation
+        # history to the LLM.
+        #
+        # TokenBudgeter selects only the portion that fits
+        # within the configured token budget.
+        history, history_tokens = (
+            self.budgeter.select_history(
+                full_history,
+                request.query,
+            )
+        )
+
+        # ====================================================
+        # 2. RETRIEVE RELEVANT MCP TOOLS
+        # ====================================================
+
         candidates = await self.retriever.retrieve(
             request.query,
             user,
             limit=self.max_candidates,
         )
-        selected_tools, schema_tokens = self.budgeter.select_tools(
-            candidates
+
+        # ====================================================
+        # 3. APPLY TOOL TOKEN BUDGET
+        # ====================================================
+
+        selected_tools, schema_tokens = (
+            self.budgeter.select_tools(
+                candidates
+            )
         )
 
         logger.info(
-            "retrieval_completed request_id=%s candidates=%s selected=%s",
+            (
+                "retrieval_completed "
+                "request_id=%s "
+                "user_id=%s "
+                "session_id=%s "
+                "candidates=%s "
+                "selected=%s"
+            ),
             request_id,
+            user.user_id,
+            request.session_id,
             len(candidates),
             len(selected_tools),
         )
 
+        # ====================================================
+        # 4. NO TOOL AVAILABLE
+        # ====================================================
+
         if not selected_tools:
-            answer = "No authorized tool is available for this request."
+
+            answer = (
+                "No authorized tool is available "
+                "for this request."
+            )
+
             await self._save(
+                user.user_id,
                 request.session_id,
                 request.query,
                 answer,
             )
+
             return self._response(
                 request_id=request_id,
                 answer=answer,
@@ -116,38 +224,48 @@ class ToolBrokerOrchestrator:
                 started=started,
             )
 
-        # SINGLE DECISION: the model may answer directly or select one tool.
+        # ====================================================
+        # 5. ASK LLM TO SELECT A TOOL
+        # ====================================================
+
         decision = await self.model.choose_tool(
             query=request.query,
             history=history,
             tools=selected_tools,
         )
 
-        if decision.direct_answer and not decision.tool_name:
-            answer = decision.direct_answer
+
+        if not decision.tool_name:
+            answer = (
+                " I can only answer questions related to the tools available factigent apis and supported machines data "
+            )
             await self._save(
+                user.user_id,
                 request.session_id,
                 request.query,
                 answer,
             )
             return self._response(
-                request_id=request_id,
-                answer=answer,
-                candidates=candidates,
-                history_tokens=history_tokens,
-                schema_tokens=schema_tokens,
-                result_tokens=0,
-                started=started,
+                request_id = request_id,
+                answer = answer,
+                candidates = candidates,
+                history_tokens = history_tokens,
+                schema_tokens = schema_tokens,
+                result_tokens = 0,
+                started = started,
             )
+        # ====================================================
+        # 7. FIND SELECTED TOOL
+        # ====================================================
 
-        if not decision.tool_name:
-            raise RuntimeError(
-                "Model returned neither a direct answer nor a tool name"
+        descriptor = (
+            self.registry.get_by_llm_name(
+                decision.tool_name
             )
-
-        descriptor = self.registry.get_by_llm_name(
-            decision.tool_name
         )
+
+        # Only tools that were exposed to the LLM
+        # are allowed to be executed.
         visible_names = {
             tool.llm_name
             for tool in selected_tools
@@ -155,45 +273,94 @@ class ToolBrokerOrchestrator:
 
         if (
             descriptor is None
-            or descriptor.llm_name not in visible_names
+            or descriptor.llm_name
+            not in visible_names
         ):
             raise RuntimeError(
-                "Model attempted to call a tool outside the authorized "
-                "candidate set"
+                (
+                    "Model attempted to call a tool "
+                    "outside the authorized candidate set"
+                )
             )
 
+        # ====================================================
+        # 8. VALIDATE TOOL ARGUMENTS
+        # ====================================================
+
         arguments = decision.arguments or {}
+
         self._validate_arguments(
             descriptor.input_schema,
             arguments,
         )
 
-        # SINGLE MCP CALL: this request cannot call a second tool.
-        raw_result = await self.gateway.call_tool(descriptor,arguments,)
-        projected_result = self.projector.project(raw_result)
-        result_tokens = estimate_tokens(projected_result)
+        # ====================================================
+        # 9. CALL MCP TOOL
+        # ====================================================
 
-        # SINGLE FINAL ANSWER.
+        raw_result = await self.gateway.call_tool(
+            descriptor,
+            arguments,
+        )
+
+        # ====================================================
+        # 10. REDUCE / PROJECT MCP RESULT
+        # ====================================================
+
+        projected_result = (
+            self.projector.project(
+                raw_result
+            )
+        )
+
+        result_tokens = estimate_tokens(
+            projected_result
+        )
+
+        # ====================================================
+        # 11. GENERATE FINAL ANSWER
+        # ====================================================
+
         answer = await self.model.answer(
             query=request.query,
             history=history,
             tool_name=descriptor.llm_name,
             tool_result=projected_result,
-            max_output_tokens=self.max_output_tokens,
+            max_output_tokens=(
+                self.max_output_tokens
+            ),
         )
 
+        # ====================================================
+        # 12. SAVE USER-SPECIFIC CONVERSATION
+        # ====================================================
+
         await self._save(
+            user.user_id,
             request.session_id,
             request.query,
             answer,
         )
 
         logger.info(
-            "request_completed request_id=%s tool=%s candidates=%s",
+            (
+                "request_completed "
+                "request_id=%s "
+                "user_id=%s "
+                "session_id=%s "
+                "tool=%s "
+                "candidates=%s"
+            ),
             request_id,
+            user.user_id,
+            request.session_id,
             descriptor.registry_id,
             len(selected_tools),
         )
+
+        # ====================================================
+        # 13. RETURN API RESPONSE
+        # ====================================================
 
         return self._response(
             request_id=request_id,
@@ -204,34 +371,101 @@ class ToolBrokerOrchestrator:
             result_tokens=result_tokens,
             started=started,
             selected_tool=descriptor.name,
-            selected_server=descriptor.server_name,
+            selected_server=(
+                descriptor.server_name
+            ),
         )
+
+    # ========================================================
+    # TOOL ARGUMENT VALIDATION
+    # ========================================================
 
     @staticmethod
     def _validate_arguments(
         schema: dict[str, Any],
         arguments: dict[str, Any],
     ) -> None:
+        """
+        Checks that arguments generated by the LLM match
+        the selected tool's JSON schema.
+
+        Example:
+
+        Tool requires:
+            machine_id: string
+
+        LLM sends:
+            machine_id: "MAC01"
+
+        -> valid
+
+        LLM sends:
+            random_field: 123
+
+        -> validation may fail depending on schema.
+        """
+
         try:
             Draft202012Validator(
-                schema or {"type": "object"}
-            ).validate(arguments)
+                schema
+                or {
+                    "type": "object"
+                }
+            ).validate(
+                arguments
+            )
+
         except ValidationError as exc:
             raise ValueError(
-                f"Invalid tool arguments: {exc.message}"
+                (
+                    "Invalid tool arguments: "
+                    f"{exc.message}"
+                )
             ) from exc
+
+    # ========================================================
+    # SAVE CONVERSATION
+    # ========================================================
 
     async def _save(
         self,
+        user_id: str,
         session_id: str,
         query: str,
         answer: str,
     ) -> None:
+        """
+        Save one user + assistant conversation turn.
+
+        IMPORTANT:
+
+        Memory key is now:
+
+            user_id + session_id
+
+        instead of only:
+
+            session_id
+
+        This is what isolates conversations between users.
+        """
+
         await self.memory.append(
+            user_id,
             session_id,
-            ChatTurn(role="user", content=query),
-            ChatTurn(role="assistant", content=answer),
+            ChatTurn(
+                role="user",
+                content=query,
+            ),
+            ChatTurn(
+                role="assistant",
+                content=answer,
+            ),
         )
+
+    # ========================================================
+    # BUILD RESPONSE
+    # ========================================================
 
     @staticmethod
     def _response(
@@ -246,6 +480,11 @@ class ToolBrokerOrchestrator:
         selected_tool: str | None = None,
         selected_server: str | None = None,
     ) -> ChatResponse:
+        """
+        Convert the internal orchestration result into the
+        final ChatResponse returned by the API.
+        """
+
         return ChatResponse(
             request_id=request_id,
             answer=answer,
@@ -254,18 +493,33 @@ class ToolBrokerOrchestrator:
             candidates=[
                 CandidateInfo(
                     tool=item.tool.registry_id,
-                    domain=item.tool.policy.domain,
-                    score=round(item.score, 4),
+                    domain=(
+                        item.tool.policy.domain
+                    ),
+                    score=round(
+                        item.score,
+                        4,
+                    ),
                 )
                 for item in candidates
             ],
             token_estimates=TokenStats(
-                estimated_history_tokens=history_tokens,
-                estimated_tool_schema_tokens=schema_tokens,
-                estimated_tool_result_tokens=result_tokens,
+                estimated_history_tokens=(
+                    history_tokens
+                ),
+                estimated_tool_schema_tokens=(
+                    schema_tokens
+                ),
+                estimated_tool_result_tokens=(
+                    result_tokens
+                ),
             ),
             latency_ms=round(
-                (time.perf_counter() - started) * 1000,
+                (
+                    time.perf_counter()
+                    - started
+                )
+                * 1000,
                 2,
             ),
         )

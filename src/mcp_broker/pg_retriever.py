@@ -407,6 +407,8 @@ class PgVectorToolRetriever:
             vectors[0],
             dtype=np.float32,
         )
+        print("Dimensions:", len(query_vector))
+        print("First 10 values:", query_vector[:10].tolist())
 
         if query_vector.ndim != 1:
             raise RuntimeError(
@@ -429,7 +431,28 @@ class PgVectorToolRetriever:
             raise RuntimeError(
                 "Question embedding contains non-finite values."
             )
+        
+        
+        # print("\n========== QUESTION EMBEDDING ==========")
+        # print(f"Question: {query}")
+        # print(f"Model: {self.embedding_model}")
+        # print(f"Dimensions: {self.embedding_dimensions}")
 
+        # print(
+        #     "Vector:",
+        #     np.array2string(
+        #         query_vector,
+        #         precision=6,
+        #         separator=", ",
+        #         threshold=query_vector.size,
+        #         max_line_width=200,
+        #     ),
+        # )
+
+        # print(
+        #     "========================================\n",
+        #     flush=True,
+        # )
         # ----------------------------------------------------
         # 2. SEARCH ONLY MATCHING STORED EMBEDDINGS
         # ----------------------------------------------------
@@ -476,7 +499,8 @@ class PgVectorToolRetriever:
                         embedding <=> %s
                     )
                 ) AS similarity,
-                is_read_only
+                is_read_only,
+                embedding
 
             FROM mcp_tools
 
@@ -515,6 +539,30 @@ class PgVectorToolRetriever:
                 rows = (
                     await cur.fetchall()
                 )
+        print("\n========== TOP 8 RETRIEVED TOOLS ==========")
+
+        for rank, row in enumerate(rows[:8], start=1):
+          server_name = row[0]
+          tool_name = row[1]
+          vector_similarity = float(row[5] or 0.0)
+        
+        
+        tool_embedding = row[7].to_numpy()
+
+    #     tool_embedding = np.asarray(
+    #     row[7],
+    #     dtype=np.float32,
+    # )
+
+        print(f"\n{rank}. {server_name}/{tool_name}")
+        print(f"vector similarity :" f"{ vector_similarity:.4f}")
+       # print(f"Retrieval score: {similarity:.4f}")
+        print(
+        "Tool embedding preview:",
+        tool_embedding[:10].tolist(),
+    )
+
+        print("\n===========================================\n")
 
         # ----------------------------------------------------
         # 3. CLEAR DIAGNOSTIC FOR STALE/MISSING EMBEDDINGS
@@ -601,6 +649,7 @@ class PgVectorToolRetriever:
                 searchable_text,
                 similarity,
                 is_read_only,
+                _tool_embedding,
             ) = row
 
             try:

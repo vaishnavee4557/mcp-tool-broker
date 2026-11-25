@@ -1,0 +1,5 @@
+﻿{
+  "model": "text-embedding-3-small",
+  "input": "Factigent test",
+  "dimensions": 256
+}

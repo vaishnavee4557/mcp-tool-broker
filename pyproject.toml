@@ -17,7 +17,6 @@ dependencies = [
   "jsonschema>=4.23,<5",
   "mcp[cli]>=2,<3",
 ]
-
 [project.optional-dependencies]
 dev = [
   "pytest>=8,<10",

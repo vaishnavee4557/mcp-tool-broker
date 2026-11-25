@@ -6,7 +6,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-
 USER_ROLES_HEADER = "X-USER-ROLES"
 USER_SCOPE_HEADER = "X-USER-SCOPE-CONTEXT"
 
